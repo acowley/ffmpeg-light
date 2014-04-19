@@ -5,6 +5,7 @@
 module Codec.FFmpeg.Decode where
 import Codec.FFmpeg.Common
 import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Control.Applicative
 import Control.Monad (when)
@@ -178,11 +179,8 @@ prepareReader fmtCtx vidStream codCtx =
 
      frame_get_buffer_check fRgb 32
 
-     sws <- sws_getCachedContext (SwsContext nullPtr) 
-              w h fmt
-              w h avPixFmtRgb24
-              swsBilinear
-              nullPtr nullPtr nullPtr
+     sws <- swsInit (ImageInfo w h fmt) (ImageInfo w h avPixFmtRgb24) 
+                    swsBilinear
 
      pkt <- AVPacket <$> mallocBytes packetSize
      let cleanup = do with fRgb av_frame_free
@@ -208,12 +206,8 @@ prepareReader fmtCtx vidStream codCtx =
                --           (#poke AVPacket, size) pkt (0::CInt)
                --           decode_video codCtx fRaw fin2 pkt
                --           peek fin2
-               let frameData = castPtr $ hasData fRaw
-                   lnSize = hasLineSize fRaw
-                   rgbData = castPtr $ hasData fRgb
-                   rgbLnSize = hasLineSize fRgb
 
-               _ <- sws_scale sws frameData lnSize 0 h rgbData rgbLnSize
+               _ <- swsScale sws fRaw fRgb
 
                -- Copy the raw frame's timestamp to the RGB frame
                getPktPts fRaw >>= setPts fRgb
