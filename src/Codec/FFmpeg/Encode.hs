@@ -5,7 +5,9 @@
 module Codec.FFmpeg.Encode where
 import Codec.FFmpeg.Common
 import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
+import Codec.Picture
 import Control.Applicative
 import Control.Monad (when)
 import Control.Monad.Error.Class
@@ -16,7 +18,6 @@ import qualified Data.Vector.Storable as V
 import Foreign.C.String
 import Foreign.C.Types
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
 import Foreign.Marshal.Utils
 
 import Foreign.Ptr
@@ -213,10 +214,10 @@ frameWriter ep fname = do
 
   yuv <- initTempYuv ep
 
-  sws <- sws_getCachedContext (SwsContext nullPtr)
-           (epWidth ep) (epHeight ep) avPixFmtRgb24
-           (epWidth ep) (epHeight ep) avPixFmtYuv420p
-           swsBilinear nullPtr nullPtr nullPtr
+  -- Initialize the scaler that we use to convert RGB -> YUV  
+  sws <- swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
+                 (ImageInfo (epWidth ep) (epHeight ep) avPixFmtYuv420p)
+                 swsBilinear
 
   pkt <- AVPacket <$> mallocBytes packetSize
 
@@ -227,8 +228,10 @@ frameWriter ep fname = do
   tb <- getTimeBase st
   codecTB <- getCodecContext st >>= getTimeBase
   let frameTime = av_rescale_q 1 codecTB tb
-
-  let resetPacket = do init_packet pkt
+      mkImage :: Vector CUChar -> Image PixelRGB8
+      mkImage = let [w,h] = map fromIntegral [epWidth ep, epHeight ep]
+                in Image w h . V.unsafeCast
+      resetPacket = do init_packet pkt
                        setData pkt nullPtr
                        setSize pkt 0
       writePacket = do setStreamIndex pkt stIndex
@@ -246,14 +249,7 @@ frameWriter ep fname = do
 
       go (Just pixels) = do
         resetPacket
-        let yuvData = castPtr $ hasData yuv
-            yuvStride = hasLineSize yuv
-
-        _ <- V.unsafeWith pixels $ \pixelPtr ->
-               withArray (pixelPtr : replicate 7 nullPtr) $ \srcArray ->
-                 withArray (epWidth ep * 3 : replicate 7 0) $ \strides ->
-                   sws_scale sws srcArray strides 0 (epHeight ep) 
-                             yuvData yuvStride
+        _ <- swsScale sws (mkImage pixels) yuv
 
         getPts yuv >>= setPts yuv . (+ frameTime)
         encode_video_check ctx pkt (Just yuv) >>= flip when writePacket
