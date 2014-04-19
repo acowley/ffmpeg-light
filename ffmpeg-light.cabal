@@ -29,6 +29,10 @@ build-type:          Simple
 extra-source-files:  src/hscMacros.h
 cabal-version:       >=1.10
 
+source-repository head
+  type:     git
+  location: http://github.com/acowley/ffmpeg-light.git
+
 library
   exposed-modules:     Codec.FFmpeg,
                        Codec.FFmpeg.Common,
