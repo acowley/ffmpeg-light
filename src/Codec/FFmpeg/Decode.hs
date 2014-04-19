@@ -8,9 +8,11 @@ import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Control.Applicative
+import Control.Arrow (first)
 import Control.Monad (when)
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
+import Control.Monad.Trans.Maybe
 import Foreign.C.String
 import Foreign.C.Types
 import Foreign.Marshal.Alloc (alloca, free, mallocBytes)
@@ -137,6 +139,13 @@ frameReader fileName =
      _ <- openCodec ctx cod
      prepareReader inputContext vidStreamIndex ctx
 
+-- | Read RGB frames with the result in the 'MaybeT' transformer.
+-- 
+-- > frameReaderT = fmap (first MaybeT) . frameReader
+frameReaderT :: (Functor m, MonadIO m, Error e, MonadError e m)
+             => FilePath -> m (MaybeT IO AVFrame, IO ())
+frameReaderT = fmap (first MaybeT) . frameReader
+
 -- | Read time stamped RGB frames from a video stream. Time is given
 -- in seconds from the start of the stream.
 frameReaderTime :: (MonadIO m, Error e, MonadError e m)
@@ -158,6 +167,14 @@ frameReaderTime fileName =
                        Just f -> do t <- frameTime' f
                                     return $ Just (f, t)
      return (readTS, cleanup)
+
+-- | Read time stamped RGB frames with the result in the 'MaybeT'
+-- transformer.
+-- 
+-- > frameReaderT = fmap (first MaybeT) . frameReader
+frameReaderTimeT :: (Functor m, MonadIO m, Error e, MonadError e m)
+                 => FilePath -> m (MaybeT IO (AVFrame, Double), IO ())
+frameReaderTimeT = fmap (first MaybeT) . frameReaderTime
 
 -- | Construct an action that gets the next available frame, and an
 -- action to release all resources associated with this video stream.

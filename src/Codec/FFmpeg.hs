@@ -4,11 +4,12 @@
 module Codec.FFmpeg (-- * Initialization
                      initFFmpeg, 
                      -- * Decoding
-                     frameReader, frameReaderTime,
+                     frameReader, frameReaderT,
+                     frameReaderTime, frameReaderTimeT,
                      -- * Encoding
                      EncodingParams(..), defaultParams, frameWriter,
                      -- * JuicyPixels interop
-                     juicyRGB, saveJuicyRGB,
+                     toJuicy, toJuicyT, saveJuicy,
                      -- * Types and Enums
                      module Codec.FFmpeg.Types, 
                      module Codec.FFmpeg.Enums

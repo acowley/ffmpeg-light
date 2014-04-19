@@ -10,11 +10,11 @@ description:         Stream frames from an encoded video, or stream frames to
                      > import Codec.FFmpeg
                      > import Codec.Picture
                      > import Control.Applicative
-                     > import Data.Traversable
+                     > import Control.Monad.Trans.Maybe
                      >
                      > go :: IO (Maybe DynamicImage)
-                     > go = do (getFrame, cleanup) <- frameReader "myVideo.mov"
-                     >         (getFrame >>= traverse juicyRGB) <* cleanup
+                     > go = do (getFrame, cleanup) <- frameReaderT "myVideo.mov"
+                     >         (runMaybeT $ getFrame >>= toJuicyT) <* cleanup
                      .
                      Tested on OS X 10.9.2 with <http://www.ffmpeg.org FFmpeg> 2.2.1
                      installed via <http://brew.sh homebrew>.
@@ -62,8 +62,10 @@ library
 executable demo
   if !flag(BuildDemo)
     buildable:      False
-  build-depends:    base < 5, ffmpeg-light, vector, mtl
+  build-depends:    base < 5, vector, mtl, transformers,
+                    ffmpeg-light, JuicyPixels
   hs-source-dirs:   demo
   main-is:          Main.hs
   default-language: Haskell2010
+  ghc-options:      -Wall
   
