@@ -14,3 +14,5 @@ go = do (getFrame, cleanup) <- frameReader "myVideo.mov"
 ```
 
 Tested on OS X 10.9.2 with FFmpeg 2.2.1 installed via [homebrew](http://brew.sh).
+
+[![Build Status](https://travis-ci.org/acowley/ffmpeg-light.png)](https://travis-ci.org/acowley/ffmpeg-light)
