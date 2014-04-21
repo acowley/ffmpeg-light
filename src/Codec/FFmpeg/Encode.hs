@@ -135,10 +135,10 @@ initStream ep oc = do
 -- | Initialize a temporary YUV frame of the same resolution as the
 -- output video stream. We well convert RGB frames using this frame as
 -- a destination before encoding the video frame.
-initTempYuv :: EncodingParams -> IO AVFrame
-initTempYuv ep = do
+initTempFrame :: EncodingParams -> AVPixelFormat -> IO AVFrame
+initTempFrame ep fmt = do
   yuv <- frame_alloc_check
-  setPixelFormat yuv avPixFmtYuv420p
+  setPixelFormat yuv fmt
   setWidth yuv (epWidth ep)
   setHeight yuv (epHeight ep)
   setPts yuv 0
@@ -212,11 +212,12 @@ frameWriter ep fname = do
   oc <- allocOutputContext fname
   (st,ctx) <- initStream ep oc
 
-  yuv <- initTempYuv ep
+  dstFmt <- getPixelFormat ctx
+  dstFrame <- initTempFrame ep dstFmt
 
   -- Initialize the scaler that we use to convert RGB -> YUV  
   sws <- swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
-                 (ImageInfo (epWidth ep) (epHeight ep) avPixFmtYuv420p)
+                 (ImageInfo (epWidth ep) (epHeight ep) dstFmt)
                  swsBilinear
 
   pkt <- AVPacket <$> mallocBytes packetSize
@@ -243,14 +244,14 @@ frameWriter ep fname = do
         then writePacket >> go Nothing
         else do write_trailer_check oc
                 _ <- codec_close ctx
-                with yuv av_frame_free
+                with dstFrame av_frame_free
                 avio_close_check oc
                 avformat_free_context oc
 
       go (Just pixels) = do
         resetPacket
-        _ <- swsScale sws (mkImage pixels) yuv
+        _ <- swsScale sws (mkImage pixels) dstFrame
 
-        getPts yuv >>= setPts yuv . (+ frameTime)
-        encode_video_check ctx pkt (Just yuv) >>= flip when writePacket
+        getPts dstFrame >>= setPts dstFrame . (+ frameTime)
+        encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
   return go
