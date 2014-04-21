@@ -7,7 +7,17 @@ import Foreign.Storable (Storable)
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/pixfmt.h>
+#include <libavutil/mathematics.h>
 #include <libswscale/swscale.h>
+
+#ifndef PIX_FMT_RGBA64
+-- WARNING: Fragile! This pixel format is not defined in older
+-- versions. Note that many FFI calls will fail at runtime with older
+-- versions, so all this does is let us the haskell code.
+#warning "This version of libav/ffmpeg is too old. It is not likely to work."
+#include "nameCompat.h"
+#endif
 
 newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 #enum AVMediaType,AVMediaType \
@@ -149,6 +159,10 @@ newtype AVIOFlag = AVIOFlag CInt deriving (Eq, Storable)
 
 newtype AVRoundMode = AVRoundMode CInt deriving (Eq, Storable)
 #enum AVRoundMode, AVRoundMode \
+ , AV_ROUND_ZERO\
+ , AV_ROUND_INF\
+ , AV_ROUND_DOWN\
+ , AV_ROUND_UP\
  , AV_ROUND_NEAR_INF\
  , AV_ROUND_PASS_MINMAX
 

@@ -26,7 +26,7 @@ maintainer:          acowley@gmail.com
 copyright:           Copyright (C) 2014 Anthony Cowley
 category:            Codec
 build-type:          Simple
-extra-source-files:  src/hscMacros.h
+extra-source-files:  src/hscMacros.h, src/nameCompat.h
 cabal-version:       >=1.10
 
 source-repository head
