@@ -1,8 +1,12 @@
 -- | Helpers for dumping information about codecs to stdout.
 module Codec.FFmpeg.Internal.Debug where
+import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Types
+import Control.Monad (when, (>=>))
 import Foreign.C.String
 import Foreign.C.Types
+import Foreign.Marshal.Array (advancePtr)
+import Foreign.Ptr (nullPtr)
 import Foreign.Storable
 
 #include <libavcodec/avcodec.h>
@@ -39,3 +43,29 @@ debugCodecContext (AVCodecContext p) = do
   (#peek AVCodecContext, me_range) p >>= si "me_range"
   putStrLn ""
   where si msg = putStrLn . ((msg++" = ")++) . show :: CInt -> IO ()
+
+foreign import ccall "av_get_pix_fmt_name"
+  av_get_pix_fmt_name :: AVPixelFormat -> IO CString
+
+pixFmtName :: AVPixelFormat -> IO String
+pixFmtName = av_get_pix_fmt_name >=> peekCString
+
+-- | Print all pixel formats supported by a given 'AVCodec'.
+debugPixelFormats :: AVCodec -> IO ()
+debugPixelFormats cod = putStrLn "Supported pixel formats:" >>
+                        getPixelFormats cod >>= go 0
+  where go i fmts
+          = let ptr = advancePtr fmts i
+            in when (ptr /= nullPtr) $ do
+                 fmt <- peek ptr
+                 when (fmt /= avPixFmtNone) $ do
+                   av_get_pix_fmt_name fmt >>= peekCString >>=
+                     putStrLn .  ("  " ++)
+                   go (i+1) fmts
+
+foreign import ccall "avcodec_get_name"
+  avcodec_get_name :: AVCodecID -> IO CString
+
+-- | Get the name of a codec.
+debugCodecName :: AVCodecID -> IO String
+debugCodecName = avcodec_get_name >=> peekCString

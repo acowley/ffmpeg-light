@@ -9,7 +9,7 @@ import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Codec.Picture
 import Control.Applicative
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Monad.Error.Class
 import Data.Bits
 import Data.Maybe (fromMaybe)
@@ -79,19 +79,37 @@ foreign import ccall "avio_close"
 foreign import ccall "avformat_free_context"
   avformat_free_context :: AVFormatContext -> IO ()
 
+foreign import ccall "av_image_fill_arrays"
+  av_image_fill_arrays :: Ptr (Ptr CUChar) -> Ptr CInt -> Ptr CUChar
+                       -> AVPixelFormat -> CInt -> CInt -> CInt -> IO CInt
+
 -- * FFmpeg Encoding Interface
 
 -- | Minimal parameters describing the desired video output.
 data EncodingParams = EncodingParams { epWidth  :: CInt
                                      , epHeight :: CInt
                                      , epFps    :: Int
-                                     , epCodec  :: AVCodecID
+                                     , epCodec  :: Maybe AVCodecID
+                                     -- ^ If 'Nothing', then the codec
+                                     -- is inferred from the output
+                                     -- file name. If 'Just', then
+                                     -- this codec is manually chosen.
                                      , epPreset :: String }
 
 -- | Use default parameters for a video of the given width and
--- height. This produces an h264 encoded stream.
+-- height, forcing the choice of the h264 encoder.
+defaultH264 :: CInt -> CInt -> EncodingParams
+defaultH264 w h = EncodingParams w h 30 (Just avCodecIdH264) "medium"
+
+-- | Use default parameters for a video of the given width and
+-- height. The output format is determined by the output file name.
 defaultParams :: CInt -> CInt -> EncodingParams
-defaultParams w h = EncodingParams w h 30 avCodecIdH264 "medium"
+defaultParams w h = EncodingParams w h 30 Nothing ""
+
+-- | Determine if the bitwise intersection of two values is non-zero.
+checkFlag :: Bits a => a -> a -> Bool
+checkFlag flg = \x -> (flg .&. x) /= allZeroBits
+  where allZeroBits = clearBit (bit 0) 0
 
 -- | Find and initialize the requested encoder, and add a video stream
 -- to the output container.
@@ -100,9 +118,12 @@ initStream ep _
   | (epWidth ep `rem` 2, epHeight ep `rem` 2) /= (0,0) =
     throwError $ strMsg "Video dimensions must be multiples of two"
 initStream ep oc = do
-  cod <- avcodec_find_encoder (epCodec ep)
+  -- Use the codec suggested by the output format, or override with
+  -- the user's choice.
+  codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return (epCodec ep)
+  cod <- avcodec_find_encoder codec
   when (getPtr cod == nullPtr)
-       (throwError $ strMsg "Couldn't find H264 encoder")
+       (errMsg "Couldn't find encoder")
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
@@ -112,11 +133,15 @@ initStream ep oc = do
   setHeight ctx (epHeight ep)
   let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
   setTimeBase ctx framePeriod
-  setPixelFormat ctx avPixFmtYuv420p
-  
+  setPixelFormat ctx $ case () of
+                         _ | codec == avCodecIdRawvideo -> avPixFmtRgb24
+                           | codec == avCodecIdGif -> avPixFmtPal8
+                           | otherwise -> avPixFmtYuv420p
+
   -- Some formats want stream headers to be separate
-  outputFlags <- getOutputFormat oc >>= getFormatFlags
-  when (outputFlags .&. avfmtGlobalheader /= clearBit (bit 0) 0) $
+  needsHeader <- checkFlag avfmtGlobalheader <$> 
+                 (getOutputFormat oc >>= getFormatFlags)
+  when needsHeader $ 
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
 
   -- _ <- withCString "vprofile" $ \kStr ->
@@ -130,6 +155,7 @@ initStream ep oc = do
 
   rOpen <- open_codec ctx cod nullPtr
   when (rOpen < 0) (throwError $ strMsg "Couldn't open codec")
+
   return (st, ctx)
 
 -- | Initialize a temporary YUV frame of the same resolution as the
@@ -149,15 +175,16 @@ initTempFrame ep fmt = do
 -- file name.
 allocOutputContext :: FilePath -> IO AVFormatContext
 allocOutputContext fname = do
-  oc <- alloca $ \ocTmp ->
-          withCString fname $ \fname' -> do
-            r <- avformat_alloc_output_context ocTmp (AVOutputFormat nullPtr)
-                                               nullPtr fname'
-            when (r < 0)
-                 (throwError $ strMsg "Couldn't allocate output format context")
-            peek ocTmp
+  oc <- alloca $ \ocTmp -> do
+          r <- withCString fname $ \fname' -> 
+                 avformat_alloc_output_context
+                   ocTmp (AVOutputFormat nullPtr)
+                   nullPtr fname'
+          when (r < 0)
+               (errMsg "Couldn't allocate output format context")
+          peek ocTmp
   when (getPtr oc == nullPtr)
-       (throwError $ strMsg "Couldn't allocate output AVFormatContext")
+       (errMsg "Couldn't allocate output AVFormatContext")
   return oc
 
 -- | Open the given file for writing.
@@ -215,10 +242,14 @@ frameWriter ep fname = do
   dstFmt <- getPixelFormat ctx
   dstFrame <- initTempFrame ep dstFmt
 
-  -- Initialize the scaler that we use to convert RGB -> YUV  
-  sws <- swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
-                 (ImageInfo (epWidth ep) (epHeight ep) dstFmt)
-                 swsBilinear
+  -- Initialize the scaler that we use to convert RGB -> dstFmt
+  -- Note that libswscaler does not support Pal8 as an output format.
+  sws <- if dstFmt /= avPixFmtPal8
+         then Just <$> 
+              swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
+                      (ImageInfo (epWidth ep) (epHeight ep) dstFmt)
+                      swsBilinear
+         else return Nothing
 
   pkt <- AVPacket <$> mallocBytes packetSize
 
@@ -228,6 +259,8 @@ frameWriter ep fname = do
 
   tb <- getTimeBase st
   codecTB <- getCodecContext st >>= getTimeBase
+  isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
+
   let frameTime = av_rescale_q 1 codecTB tb
       mkImage :: Vector CUChar -> Image PixelRGB8
       mkImage = let [w,h] = map fromIntegral [epWidth ep, epHeight ep]
@@ -237,21 +270,42 @@ frameWriter ep fname = do
                        setSize pkt 0
       writePacket = do setStreamIndex pkt stIndex
                        write_frame_check oc pkt
-      go Nothing = do
-        resetPacket
-        goOn <- encode_video_check ctx pkt Nothing
-        if goOn
-        then writePacket >> go Nothing
-        else do write_trailer_check oc
-                _ <- codec_close ctx
-                with dstFrame av_frame_free
-                avio_close_check oc
-                avformat_free_context oc
-
-      go (Just pixels) = do
-        resetPacket
-        _ <- swsScale sws (mkImage pixels) dstFrame
-
-        getPts dstFrame >>= setPts dstFrame . (+ frameTime)
-        encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
+      copyDstData pixels =
+        void . V.unsafeWith pixels $ \ptr ->
+          av_image_fill_arrays (castPtr $ hasData dstFrame)
+                               (hasLineSize dstFrame)
+                               (castPtr ptr)
+                               dstFmt
+                               (epWidth ep)
+                               (epHeight ep)
+                               1
+      scaleToDst sws' pixels = void $ swsScale sws' (mkImage pixels) dstFrame
+      fillDst = maybe copyDstData scaleToDst sws
+      addRaw Nothing = return ()
+      addRaw (Just pixels) =
+        do resetPacket
+           getPacketFlags pkt >>= setPacketFlags pkt . (.|. avPktFlagKey)
+           setSize pkt (fromIntegral $ V.length pixels)
+           getPts dstFrame >>= setPts dstFrame . (+ frameTime)
+           getPts dstFrame >>= setPts pkt
+           getPts dstFrame >>= setDts pkt
+           V.unsafeWith pixels $ \ptr -> do
+             setData pkt (castPtr ptr)
+             writePacket
+      addEncoded Nothing = do resetPacket
+                              encode_video_check ctx pkt Nothing >>=
+                                flip when (writePacket >> addEncoded Nothing)
+      addEncoded (Just pixels) =
+        do resetPacket
+           fillDst pixels
+           getPts dstFrame >>= setPts dstFrame . (+ frameTime)
+           encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
+      addFrame = if isRaw then addRaw else addEncoded
+      go Nothing = do addFrame Nothing
+                      write_trailer_check oc
+                      _ <- codec_close ctx
+                      with dstFrame av_frame_free
+                      avio_close_check oc
+                      avformat_free_context oc
+      go (Just pixels) = addFrame (Just pixels)
   return go

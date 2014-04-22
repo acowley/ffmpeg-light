@@ -30,12 +30,17 @@ newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 
 newtype AVPixelFormat = AVPixelFormat CInt deriving (Eq, Storable)
 #enum AVPixelFormat,AVPixelFormat \
+ , AV_PIX_FMT_NONE\
  , AV_PIX_FMT_RGB24\
  , AV_PIX_FMT_Y400A\
  , AV_PIX_FMT_RGB32\
  , AV_PIX_FMT_RGB32_1\
  , AV_PIX_FMT_BGR32\
  , AV_PIX_FMT_BGR32_1\
+ , AV_PIX_FMT_RGB8\
+ , AV_PIX_FMT_BGR8\
+ , AV_PIX_FMT_RGB4_BYTE\
+ , AV_PIX_FMT_BGR4_BYTE\
  , AV_PIX_FMT_GRAY8\
  , AV_PIX_FMT_GRAY16\
  , AV_PIX_FMT_GRAY8A\
@@ -69,9 +74,12 @@ instance Show AVPixelFormat where
 newtype AVCodecID = AVCodecID CInt deriving (Eq, Show, Storable)
 #enum AVCodecID,AVCodecID \
  , AV_CODEC_ID_H264\
+ , AV_CODEC_ID_HEVC\
  , AV_CODEC_ID_THEORA\
+ , AV_CODEC_ID_VC1\
  , AV_CODEC_ID_MPEG4\
  , AV_CODEC_ID_MPEG2VIDEO\
+ , AV_CODEC_ID_RAWVIDEO\
  , AV_CODEC_ID_GIF\
  , AV_CODEC_ID_AAC\
  , AV_CODEC_ID_MP3\
@@ -205,3 +213,8 @@ newtype FormatFlag = FormatFlag CInt deriving (Eq, Bits, Storable)
  , AVFMT_NOSTREAMS\
  , AVFMT_ALLOW_FLUSH\
  , AVFMT_TS_NONSTRICT
+
+newtype PacketFlag = PacketFlag CInt deriving (Eq, Bits, Storable)
+#enum PacketFlag, PacketFlag \
+ , AV_PKT_FLAG_KEY\
+ , AV_PKT_FLAG_CORRUPT

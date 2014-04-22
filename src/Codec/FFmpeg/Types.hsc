@@ -65,10 +65,12 @@ newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString
 #mkField Name, CString
+#mkField PixelFormats, (Ptr AVPixelFormat)
 
 #hasField AVCodec, LongName, long_name
 #hasField AVCodec, Name, name
 #hasField AVCodec, CodecID, id
+#hasField AVCodec, PixelFormats, pix_fmts
 
 newtype AVDictionary = AVDictionary (Ptr ()) deriving (Storable, HasPtr)
 newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
@@ -85,24 +87,36 @@ newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFrame, Data, data
 
 newtype AVPicture = AVPicture (Ptr ()) deriving (Storable, HasPtr)
+#hasField AVPicture, Data, data
+
 newtype SwsContext = SwsContext (Ptr ()) deriving (Storable, HasPtr)
 newtype AVOutputFormat = AVOutputFormat (Ptr ()) deriving (Storable, HasPtr)
 #mkField FormatFlags, FormatFlag
+#mkField VideoCodecID, AVCodecID
 #hasField AVOutputFormat, FormatFlags, flags
+#hasField AVOutputFormat, VideoCodecID, video_codec
 
 newtype AVIOContext = AVIOContext (Ptr ()) deriving (Storable, HasPtr)
 
 newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
 #mkField Data, (Ptr ())
-#hasField AVPacket, Data, data
 #mkField Size, CInt
-#hasField AVPacket, Size, size
+#mkField PacketFlags, PacketFlag
+#mkField Dts, CLong
 
+#hasField AVPacket, Data, data
+#hasField AVPacket, Size, size
+#hasField AVPacket, PacketFlags, flags
 #hasField AVPacket, StreamIndex, stream_index
+#hasField AVPacket, Pts, pts
+#hasField AVPacket, Dts, dts
 
 -- | @sizeof@ the 'AVPacket' structure in bytes.
 packetSize :: Int
 packetSize = #size AVPacket
+
+pictureSize :: Int
+pictureSize = #size AVPicture
 
 -- * Types with Haskell equivalents
 
