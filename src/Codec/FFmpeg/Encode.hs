@@ -106,7 +106,7 @@ data EncodingParams =
                  -- is manually chosen.
                  , epPixelFormat :: Maybe AVPixelFormat
                  -- ^ If 'Nothing', automatically chose a pixel format
-                 -- based on the output coded. If 'Just', force the
+                 -- based on the output codec. If 'Just', force the
                  -- selected pixel format.
                  , epPreset :: String
                  -- ^ Encoder-specific hints. For h264, the default
