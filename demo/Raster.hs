@@ -87,9 +87,14 @@ logoTest texture insetOrigin = renderDrawing 350 350 background (bg >> drawing)
 -- | Animate the logo and write it to a video file!
 main :: IO ()
 main = do initFFmpeg
-          -- We can change the output file extension to ".gif" to get
-          -- an animated gif!
-          w <- frameWriter (defaultParams 350 350) "logo.mov"
+          -- Change the output file extension to ".gif" to get an
+          -- animated gif! We can get a small GIF file by setting
+          -- 'epPixelFormat' to 'avPixFmtRgb8', but it might not look
+          -- very good.
+          w <- frameWriter params "logo.mov"
           forM_ path $
             w . Just . V.unsafeCast . imageData . logoTest (uniformTexture blue)
           w Nothing
+  where params = defaultParams 350 350
+        -- tinyGif = params { epPixelFormat = Just avPixFmtRgb8 }
+        -- prettyGif = params { preset = "dither" }

@@ -29,6 +29,9 @@ foreign import ccall "av_init_packet"
 foreign import ccall "av_free_packet"
   free_packet :: AVPacket -> IO ()
 
+foreign import ccall "av_malloc"
+  av_malloc :: CSize -> IO (Ptr ())
+
 foreign import ccall "av_free"
   av_free :: Ptr () -> IO ()
 

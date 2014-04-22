@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.3.1
+version:             0.4
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -51,7 +51,7 @@ library
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,
-                       Codec.FFmpeg.Internal.V3
+                       Codec.FFmpeg.Internal.Linear
   build-tools:         hsc2hs
   build-depends:       base >=4.6 && < 5,
                        vector >= 0.10.9 && < 0.11,

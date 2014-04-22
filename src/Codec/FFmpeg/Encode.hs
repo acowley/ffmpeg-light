@@ -8,7 +8,7 @@
 module Codec.FFmpeg.Encode where
 import Codec.FFmpeg.Common
 import Codec.FFmpeg.Enums
-import Codec.FFmpeg.Internal.V3
+import Codec.FFmpeg.Internal.Linear
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Codec.Picture
@@ -20,8 +20,10 @@ import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
+import qualified Data.Vector.Storable.Mutable as VM
 import Foreign.C.String
 import Foreign.C.Types
+import Foreign.ForeignPtr (touchForeignPtr)
 import Foreign.Marshal.Alloc
 import Foreign.Marshal.Utils
 
@@ -88,28 +90,43 @@ foreign import ccall "av_image_fill_arrays"
   av_image_fill_arrays :: Ptr (Ptr CUChar) -> Ptr CInt -> Ptr CUChar
                        -> AVPixelFormat -> CInt -> CInt -> CInt -> IO CInt
 
+foreign import ccall "av_image_fill_linesizes"
+  av_image_fill_linesizes :: Ptr CInt -> AVPixelFormat -> CInt -> IO CInt
+
 -- * FFmpeg Encoding Interface
 
 -- | Minimal parameters describing the desired video output.
-data EncodingParams = EncodingParams { epWidth  :: CInt
-                                     , epHeight :: CInt
-                                     , epFps    :: Int
-                                     , epCodec  :: Maybe AVCodecID
-                                     -- ^ If 'Nothing', then the codec
-                                     -- is inferred from the output
-                                     -- file name. If 'Just', then
-                                     -- this codec is manually chosen.
-                                     , epPreset :: String }
+data EncodingParams = 
+  EncodingParams { epWidth  :: CInt
+                 , epHeight :: CInt
+                 , epFps    :: Int
+                 , epCodec  :: Maybe AVCodecID
+                 -- ^ If 'Nothing', then the codec is inferred from
+                 -- the output file name. If 'Just', then this codec
+                 -- is manually chosen.
+                 , epPixelFormat :: Maybe AVPixelFormat
+                 -- ^ If 'Nothing', automatically chose a pixel format
+                 -- based on the output coded. If 'Just', force the
+                 -- selected pixel format.
+                 , epPreset :: String
+                 -- ^ Encoder-specific hints. For h264, the default
+                 -- preset is @\"medium\"@ (other options are
+                 -- @\"fast\"@, @\"slow\"@, etc.). For the GIF codec,
+                 -- setting this to @\"dither\"@ will enable dithering
+                 -- during the palettization process. This will
+                 -- improve image quality, but result in a larger
+                 -- file.
+                 }
 
 -- | Use default parameters for a video of the given width and
 -- height, forcing the choice of the h264 encoder.
 defaultH264 :: CInt -> CInt -> EncodingParams
-defaultH264 w h = EncodingParams w h 30 (Just avCodecIdH264) "medium"
+defaultH264 w h = EncodingParams w h 30 (Just avCodecIdH264) Nothing "medium"
 
 -- | Use default parameters for a video of the given width and
 -- height. The output format is determined by the output file name.
 defaultParams :: CInt -> CInt -> EncodingParams
-defaultParams w h = EncodingParams w h 30 Nothing ""
+defaultParams w h = EncodingParams w h 30 Nothing Nothing ""
 
 -- | Determine if the bitwise intersection of two values is non-zero.
 checkFlag :: Bits a => a -> a -> Bool
@@ -138,9 +155,11 @@ initStream ep oc = do
   setHeight ctx (epHeight ep)
   let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
   setTimeBase ctx framePeriod
-  setPixelFormat ctx $ case () of
-                         _ | codec == avCodecIdRawvideo -> avPixFmtRgb24
-                           | codec == avCodecIdGif -> avPixFmtRgb8
+  setPixelFormat ctx $ case epPixelFormat ep of
+                         Just fmt -> fmt
+                         Nothing
+                           | codec == avCodecIdRawvideo -> avPixFmtRgb24
+                           | codec == avCodecIdGif -> avPixFmtPal8
                            | otherwise -> avPixFmtYuv420p
 
   -- Some formats want stream headers to be separate
@@ -168,13 +187,18 @@ initStream ep oc = do
 -- a destination before encoding the video frame.
 initTempFrame :: EncodingParams -> AVPixelFormat -> IO AVFrame
 initTempFrame ep fmt = do
-  yuv <- frame_alloc_check
-  setPixelFormat yuv fmt
-  setWidth yuv (epWidth ep)
-  setHeight yuv (epHeight ep)
-  setPts yuv 0
-  frame_get_buffer_check yuv 32
-  return yuv
+  frame <- frame_alloc_check
+  setPixelFormat frame fmt
+  setWidth frame (epWidth ep)
+  setHeight frame (epHeight ep)
+  setPts frame 0
+
+  -- For palettized images, we will provide our own buffer.
+  if fmt == avPixFmtRgb8 || fmt == avPixFmtPal8
+  then do r <- av_image_fill_linesizes (hasLineSize frame) fmt (epWidth ep)
+          when (r < 0) (errMsg "Error filling temporary frame line sizes")
+  else frame_get_buffer_check frame 32
+  return frame
 
 -- | Allocate an output context inferring the codec from the given
 -- file name.
@@ -232,18 +256,39 @@ write_trailer_check :: AVFormatContext -> IO ()
 write_trailer_check oc = do r <- av_write_trailer oc
                             when (r /= 0) (errMsg "Error writing trailer")
 
--- | Quantize RGB24 pixels to the systematic RGB8 color palette. This
--- is slow, but lets us prepare an RGB24 pixel format for output as an
--- RGB8 GIF.
-palettizeRGB8 :: V.Vector (V3 CUChar) -> V.Vector CUChar
-palettizeRGB8 = V.map (searchPal . fmap fromIntegral)
-  where pal :: V.Vector (V3 CInt)
-        pal = V.generate 256 $ \i' -> 
+-- | Quantize RGB24 pixels to the systematic RGB8 color palette. The
+-- image data has space for a palette appended to be compliant with
+-- 'av_image_fill_arrays''s expectations. This is slow.
+palettizeRGB8 :: EncodingParams -> V.Vector CUChar -> V.Vector CUChar
+palettizeRGB8 ep = \pix -> V.create $
+  do let pix' = V.unsafeCast pix :: V.Vector (V3 CUChar)
+     m <- VM.new (numPix + 1024)
+     V.mapM_ (\i -> let p = searchPal $ fromIntegral <$> (pix' V.! i)
+                    in VM.unsafeWrite m i p)
+             (V.enumFromN 0 numPix)
+     VM.set (VM.unsafeSlice numPix 1024 m) 0
+     return m
+  where numPix = fromIntegral $ epWidth ep * epHeight ep
+        pal :: V.Vector (V3 CInt)
+        pal = V.generate 256 $ \i' ->
                 let i = fromIntegral i'
                 in V3 ((i `shiftR` 5) * 36)
                       (((i `shiftR` 2) .&. 7) * 36)
                       ((i .&. 3) * 85)
         searchPal = fromIntegral . flip V.minIndexBy pal . comparing . qd
+
+-- | High quality dithered, median cut palette using 'palettize'. The
+-- result is packed such that the BGRA palette is laid out
+-- contiguously following the palettized image data.
+palettizeJuicy :: EncodingParams -> V.Vector CUChar -> V.Vector CUChar
+palettizeJuicy ep pix = 
+  let (pix', pal) = palettize (PaletteOptions MedianMeanCut doDither 256)
+                              (mkImage $ V.unsafeCast pix)
+      pal' = V.map (\(V3 r g b) -> V4 b g r (255::CUChar))
+                   (V.unsafeCast $ imageData pal)
+  in V.unsafeCast (imageData pix') V.++ V.unsafeCast pal'
+  where mkImage = Image (fromIntegral $ epWidth ep) (fromIntegral $ epHeight ep)
+        doDither = epPreset ep == "dither"
 
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write RGB images of the resolution given by
@@ -269,7 +314,7 @@ frameWriter ep fname = do
                       swsBilinear
          else return Nothing
 
-  pkt <- AVPacket <$> mallocBytes packetSize
+  pkt <- AVPacket <$> av_malloc (fromIntegral packetSize)
 
   stIndex <- getStreamIndex st
   avio_open_check oc fname
@@ -279,7 +324,10 @@ frameWriter ep fname = do
   codecTB <- getCodecContext st >>= getTimeBase
   isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
 
-  let frameTime = av_rescale_q 1 codecTB tb
+  let palettizer | dstFmt == avPixFmtPal8 = Just $ palettizeJuicy ep
+                 | dstFmt == avPixFmtRgb8 = Just $ palettizeRGB8 ep
+                 | otherwise =  Nothing
+      frameTime = av_rescale_q 1 codecTB tb
       mkImage :: Vector CUChar -> Image PixelRGB8
       mkImage = let [w,h] = map fromIntegral [epWidth ep, epHeight ep]
                 in Image w h . V.unsafeCast
@@ -288,9 +336,7 @@ frameWriter ep fname = do
                        setSize pkt 0
       writePacket = do setStreamIndex pkt stIndex
                        write_frame_check oc pkt
-      copyDstData
-        | dstFmt == avPixFmtRgb8 = copyDstDataAux . palettizeRGB8 . V.unsafeCast
-        | otherwise = copyDstDataAux
+      copyDstData = copyDstDataAux
 
       copyDstDataAux pixels =
         void . V.unsafeWith pixels $ \ptr ->
@@ -320,14 +366,19 @@ frameWriter ep fname = do
                                 flip when (writePacket >> addEncoded Nothing)
       addEncoded (Just pixels) =
         do resetPacket
-           fillDst pixels
+           let pixels' = maybe pixels ($ V.unsafeCast pixels) palettizer
+           fillDst pixels'
            getPts dstFrame >>= setPts dstFrame . (+ frameTime)
            encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
+           -- Make sure the GC hasn't clobbered our palettized pixel data
+           let (fp,_,_) = V.unsafeToForeignPtr pixels'
+           touchForeignPtr fp
       addFrame = if isRaw then addRaw else addEncoded
       go Nothing = do addFrame Nothing
                       write_trailer_check oc
                       _ <- codec_close ctx
                       with dstFrame av_frame_free
+                      av_free (getPtr pkt)
                       avio_close_check oc
                       avformat_free_context oc
       go (Just pixels) = addFrame (Just pixels)
