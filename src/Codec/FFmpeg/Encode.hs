@@ -2,9 +2,13 @@
 -- | Video encoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
+-- 
+-- Note: If you need to import this module, consider qualifying the
+-- import.
 module Codec.FFmpeg.Encode where
 import Codec.FFmpeg.Common
 import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Internal.V3
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Codec.Picture
@@ -13,6 +17,7 @@ import Control.Monad (when, void)
 import Control.Monad.Error.Class
 import Data.Bits
 import Data.Maybe (fromMaybe)
+import Data.Ord (comparing)
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import Foreign.C.String
@@ -49,7 +54,7 @@ foreign import ccall "av_freep"
   av_freep :: Ptr (Ptr a) -> IO ()
 
 foreign import ccall "av_guess_format"
-  guess_format :: CString -> CString -> CString -> IO AVOutputFormat
+  av_guess_format :: CString -> CString -> CString -> IO AVOutputFormat
 
 foreign import ccall "avformat_alloc_output_context2"
   avformat_alloc_output_context :: Ptr AVFormatContext -> AVOutputFormat
@@ -135,7 +140,7 @@ initStream ep oc = do
   setTimeBase ctx framePeriod
   setPixelFormat ctx $ case () of
                          _ | codec == avCodecIdRawvideo -> avPixFmtRgb24
-                           | codec == avCodecIdGif -> avPixFmtPal8
+                           | codec == avCodecIdGif -> avPixFmtRgb8
                            | otherwise -> avPixFmtYuv420p
 
   -- Some formats want stream headers to be separate
@@ -227,6 +232,19 @@ write_trailer_check :: AVFormatContext -> IO ()
 write_trailer_check oc = do r <- av_write_trailer oc
                             when (r /= 0) (errMsg "Error writing trailer")
 
+-- | Quantize RGB24 pixels to the systematic RGB8 color palette. This
+-- is slow, but lets us prepare an RGB24 pixel format for output as an
+-- RGB8 GIF.
+palettizeRGB8 :: V.Vector (V3 CUChar) -> V.Vector CUChar
+palettizeRGB8 = V.map (searchPal . fmap fromIntegral)
+  where pal :: V.Vector (V3 CInt)
+        pal = V.generate 256 $ \i' -> 
+                let i = fromIntegral i'
+                in V3 ((i `shiftR` 5) * 36)
+                      (((i `shiftR` 2) .&. 7) * 36)
+                      ((i .&. 3) * 85)
+        searchPal = fromIntegral . flip V.minIndexBy pal . comparing . qd
+
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write RGB images of the resolution given by
 -- the provided 'EncodingParams'. The function will convert the
@@ -244,7 +262,7 @@ frameWriter ep fname = do
 
   -- Initialize the scaler that we use to convert RGB -> dstFmt
   -- Note that libswscaler does not support Pal8 as an output format.
-  sws <- if dstFmt /= avPixFmtPal8
+  sws <- if dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8
          then Just <$> 
               swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
                       (ImageInfo (epWidth ep) (epHeight ep) dstFmt)
@@ -270,7 +288,11 @@ frameWriter ep fname = do
                        setSize pkt 0
       writePacket = do setStreamIndex pkt stIndex
                        write_frame_check oc pkt
-      copyDstData pixels =
+      copyDstData
+        | dstFmt == avPixFmtRgb8 = copyDstDataAux . palettizeRGB8 . V.unsafeCast
+        | otherwise = copyDstDataAux
+
+      copyDstDataAux pixels =
         void . V.unsafeWith pixels $ \ptr ->
           av_image_fill_arrays (castPtr $ hasData dstFrame)
                                (hasLineSize dstFrame)
@@ -285,7 +307,8 @@ frameWriter ep fname = do
       addRaw (Just pixels) =
         do resetPacket
            getPacketFlags pkt >>= setPacketFlags pkt . (.|. avPktFlagKey)
-           setSize pkt (fromIntegral $ V.length pixels)
+           --setSize pkt (fromIntegral $ V.length pixels)
+           setSize pkt (fromIntegral pictureSize)
            getPts dstFrame >>= setPts dstFrame . (+ frameTime)
            getPts dstFrame >>= setPts pkt
            getPts dstFrame >>= setDts pkt
