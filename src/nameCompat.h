@@ -3,12 +3,17 @@
    are locked down with these old versions, we hack in support for the
    newer constant names. */
 
+#define AV_PIX_FMT_NONE PIX_FMT_NONE
 #define AV_PIX_FMT_RGB24 PIX_FMT_RGB24
 #define AV_PIX_FMT_Y400A PIX_FMT_Y400A
 #define AV_PIX_FMT_RGB32 PIX_FMT_RGB32
 #define AV_PIX_FMT_RGB32_1 PIX_FMT_RGB32_1
 #define AV_PIX_FMT_BGR32 PIX_FMT_BGR32
 #define AV_PIX_FMT_BGR32_1 PIX_FMT_BGR32_1
+#define AV_PIX_FMT_RGB8 -1
+#define AV_PIX_FMT_BGR8 -1
+#define AV_PIX_FMT_RGB4_BYTE -1
+#define AV_PIX_FMT_BGR4_BYTE -1
 #define AV_PIX_FMT_GRAY8 PIX_FMT_GRAY8
 #define AV_PIX_FMT_GRAY16 PIX_FMT_GRAY16
 #define AV_PIX_FMT_GRAY8A -1
@@ -38,6 +43,9 @@
 #define AV_CODEC_ID_AAC CODEC_ID_AAC
 #define AV_CODEC_ID_MP3 CODEC_ID_MP3
 #define AV_CODEC_ID_DTS CODEC_ID_DTS
+#define AV_CODEC_ID_HEVC -1
+#define AV_CODEC_ID_VC1 -1
+#define AV_CODEC_ID_RAWVIDEO CODEC_ID_RAWVIDEO
 
 #define FF_PROFILE_AAC_HE -1
 #define FF_PROFILE_AAC_HE_V2 -1
