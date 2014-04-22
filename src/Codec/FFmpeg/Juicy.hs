@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, TypeSynonymInstances #-}
 -- | Convert between FFmpeg frames and JuicyPixels images.
 module Codec.FFmpeg.Juicy where
 import Codec.Picture
@@ -54,3 +54,16 @@ toJuicy frame = do
 -- be converted to a 'DynamicImage' using 'toJuicy'.
 saveJuicy :: FilePath -> AVFrame -> IO ()
 saveJuicy name = toJuicy >=> traverse_ (savePngImage name)
+
+-- | Mapping of @JuicyPixels@ pixel types to FFmpeg pixel formats.
+class JuicyPixelFormat a where
+  juicyPixelFormat :: proxy a -> AVPixelFormat
+
+instance JuicyPixelFormat Pixel8 where
+  juicyPixelFormat _ = avPixFmtGray8
+
+instance JuicyPixelFormat PixelRGB8 where
+  juicyPixelFormat _ = avPixFmtRgb24
+
+instance JuicyPixelFormat PixelRGBA8 where
+  juicyPixelFormat _ = avPixFmtRgba
