@@ -59,11 +59,22 @@ background, blue :: PixelRGB8
 background = PixelRGB8 128 128 128
 blue = PixelRGB8 0 020 150
 
+-- `fgSize` will determine our image size. `bgSize` is smaller so we
+-- see the effect of the `SamplerRepeat` sampler.
+
+fgSize, fgScale, bgSize :: Float
+fgSize = 350
+fgScale = fgSize / 100
+bgSize = 57 * fgScale
+
+fgSizei :: Integral a => a
+fgSizei = floor fgSize
+
 -- | A ring with a drop-shadow on the inside. The texture is repeated,
 -- resulting in concentric rings centered at @(200,200)@.
 bgGrad :: Texture PixelRGB8
 bgGrad = withSampler SamplerRepeat $
-         radialGradientTexture gradDef (V2 200 200) 100
+         radialGradientTexture gradDef (V2 bgSize bgSize) (bgSize * 0.5)
   where gradDef = [(0  , PixelRGB8 255 255 255)
                   ,(0.5, PixelRGB8 255 255 255)
                   ,(0.5, PixelRGB8 255 255 255)
@@ -75,13 +86,14 @@ bgGrad = withSampler SamplerRepeat $
 
 -- | Adapted from the Rasterific logo example.
 logoTest :: Texture PixelRGB8 -> Vector -> Image PixelRGB8
-logoTest texture insetOrigin = renderDrawing 350 350 background (bg >> drawing)
+logoTest texture insetOrigin = 
+  renderDrawing fgSizei fgSizei background (bg >> drawing)
   where 
     beziers = logo 40 False $ V2 10 10
     inverse = logo 20 True $ (V2 20 20 + insetOrigin)
-    bg = withTexture bgGrad . fill $ rectangle (V2 0 0) 350 350
+    bg = withTexture bgGrad . fill $ rectangle (V2 0 0) fgSize fgSize
     drawing = withTexture texture . fill 
-            . transform (applyTransformation $ scale 3.5 3.5)
+            . transform (applyTransformation $ scale fgScale fgScale)
             $ beziers ++ inverse
 
 -- | Animate the logo and write it to a video file!
@@ -95,6 +107,6 @@ main = do initFFmpeg
           forM_ path $
             w . Just . V.unsafeCast . imageData . logoTest (uniformTexture blue)
           w Nothing
-  where params = defaultParams 350 350
+  where params = defaultParams fgSizei fgSizei
         -- tinyGif = params { epPixelFormat = Just avPixFmtRgb8 }
         -- prettyGif = params { preset = "dither" }
