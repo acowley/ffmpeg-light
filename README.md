@@ -16,7 +16,7 @@ go = do (getFrame, cleanup) <- frameReader "myVideo.mov"
 A demonstration of creating an animation using the
 [`Rasterific`](http://hackage.haskell.org/package/Rasterific) library
 may be found in
-[`demo/Raster.hs`](https://github.com/acowley/ffmpeg-light/raw/master/demo/Raster.hs). A
+[`demo/Raster.hs`](https://github.com/acowley/ffmpeg-light/blob/master/demo/Raster.hs). A
 weird animated variation of the `Rasterific` logo is the result:
 
 ![Animated Rasterific Logo](https://github.com/acowley/ffmpeg-light/raw/master/demo/logoTiny.gif)
