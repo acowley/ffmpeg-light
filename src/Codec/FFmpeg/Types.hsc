@@ -42,6 +42,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField PixelFormat, AVPixelFormat
 #mkField CodecFlags, CodecFlag
 #mkField CodecID, AVCodecID
+#mkField PrivData, (Ptr ())
 
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
@@ -50,6 +51,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodecContext, PixelFormat, pix_fmt
 #hasField AVCodecContext, CodecFlags, flags
 #hasField AVCodecContext, CodecID, codec_id
+#hasField AVCodecContext, PrivData, priv_data
 
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 

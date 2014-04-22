@@ -148,10 +148,10 @@ initStream ep oc = do
   --        withCString (preset ep) $ \vStr ->
   --          av_opt_set ((#ptr AVCodecContext, priv_data) (getPtr ctx))
   --                     kStr vStr 0
-  -- _ <- withCString "preset" $ \kStr ->
-  --        withCString "medium" $ \vStr ->
-  --          av_opt_set ((#ptr AVCodecContext, priv_data) (getPtr ctx))
-  --                     kStr vStr 0
+  when (not . null $ epPreset ep) . void $
+    withCString "preset" $ \kStr ->
+      withCString (epPreset ep) $ \vStr ->
+        getPrivData ctx >>= \pd -> av_opt_set pd kStr vStr 0
 
   rOpen <- open_codec ctx cod nullPtr
   when (rOpen < 0) (throwError $ strMsg "Couldn't open codec")
