@@ -1,3 +1,8 @@
+0.6
+---
+
+* Cleaned the API of detritus. Use the image* functions.
+
 0.5
 ---
 

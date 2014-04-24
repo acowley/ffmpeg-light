@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.5
+version:             0.6
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to

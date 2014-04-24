@@ -129,7 +129,7 @@ read_frame_check :: AVFormatContext -> AVPacket -> IO ()
 read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
                               when (r < 0) (errMsg "Frame read failed")
 
--- | Read RGB frames from a video stream.
+-- | Read frames of the given 'AVPixelFormat' from a video stream.
 frameReader :: (MonadIO m, Error e, MonadError e m)
             => AVPixelFormat -> FilePath -> m (IO (Maybe AVFrame), IO ())
 frameReader dstFmt fileName =
@@ -146,8 +146,9 @@ frameReaderT :: (Functor m, MonadIO m, Error e, MonadError e m)
              => FilePath -> m (MaybeT IO AVFrame, IO ())
 frameReaderT = fmap (first MaybeT) . frameReader avPixFmtRgb24
 
--- | Read time stamped RGB frames from a video stream. Time is given
--- in seconds from the start of the stream.
+-- | Read time stamped frames of the given 'AVPixelFormat' from a
+-- video stream. Time is given in seconds from the start of the
+-- stream.
 frameReaderTime :: (MonadIO m, Error e, MonadError e m)
                 => AVPixelFormat -> FilePath
                 -> m (IO (Maybe (AVFrame, Double)), IO ())

@@ -4,19 +4,15 @@
 module Codec.FFmpeg (-- * Initialization
                      initFFmpeg, 
                      -- * Decoding
-                     frameReader, frameReaderT,
-                     frameReaderTime, frameReaderTimeT,
                      imageReader, imageReaderTime,
                      -- * Encoding
-                     EncodingParams(..), defaultParams,
-                     frameWriterRgb, imageWriter,
+                     EncodingParams(..), defaultParams, imageWriter,
                      -- * JuicyPixels interop
                      toJuicy, toJuicyT, saveJuicy,
                      -- * Types and Enums
                      module Codec.FFmpeg.Types, 
                      module Codec.FFmpeg.Enums
                      )where
-import Codec.FFmpeg.Decode
 import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Juicy

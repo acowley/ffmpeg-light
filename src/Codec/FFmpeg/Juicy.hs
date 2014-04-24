@@ -99,7 +99,7 @@ juicyPixelStride :: forall a proxy. Pixel a => proxy a -> Int
 juicyPixelStride _ = 
   sizeOf (undefined :: PixelBaseComponent a) * componentCount (undefined :: a)
 
--- | Read RGB frames from a video stream.
+-- | Read frames from a video stream.
 imageReader :: forall m p e.
                (Functor m, MonadIO m, Error e, MonadError e m,
                 JuicyPixelFormat p)
@@ -108,8 +108,8 @@ imageReader = fmap (first (runMaybeT . aux toJuicyImage))
             . frameReader (juicyPixelFormat ([] :: [p]))
   where aux g x = MaybeT x >>= MaybeT . g
 
--- | Read time stamped RGB frames from a video stream. Time is given
--- in seconds from the start of the stream.
+-- | Read time stamped frames from a video stream. Time is given in
+-- seconds from the start of the stream.
 imageReaderTime :: forall m p e.
                    (Functor m, MonadIO m, Error e, MonadError e m,
                     JuicyPixelFormat p)
