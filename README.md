@@ -6,11 +6,10 @@ Stream frames from an encoded video, or stream frames to a video output file. To
 import Codec.FFmpeg
 import Codec.Picture
 import Control.Applicative
-import Data.Traversable
 
-go :: IO DynamicImage
-go = do (getFrame, cleanup) <- frameReader "myVideo.mov"
-        (getFrame >>= traverse juicyRGB) <* cleanup
+go :: IO (Maybe DynamicImage)
+go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
+        (fmap ImageRGB8 <$> getFrame) <* cleanup
 ```
 
 A demonstration of creating an animation using the

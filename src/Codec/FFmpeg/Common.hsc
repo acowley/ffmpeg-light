@@ -76,3 +76,13 @@ frame_get_buffer_check :: AVFrame -> CInt -> IO ()
 frame_get_buffer_check f x = do r <- av_frame_get_buffer f x
                                 when (r /= 0)
                                      (errMsg "Failed to allocate buffers")
+
+-- | Bytes-per-pixel for an 'AVPixelFormat'
+avPixelStride :: AVPixelFormat -> Maybe Int
+avPixelStride fmt
+  | fmt == avPixFmtGray8  = Just 1
+  | fmt == avPixFmtRgb24  = Just 3
+  | fmt == avPixFmtRgba   = Just 4
+  | fmt == avPixFmtRgb8   = Just 1
+  | fmt == avPixFmtPal8   = Just 1
+  | otherwise = Nothing

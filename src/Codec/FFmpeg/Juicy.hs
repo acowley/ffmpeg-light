@@ -2,8 +2,11 @@
 -- | Convert between FFmpeg frames and JuicyPixels images.
 module Codec.FFmpeg.Juicy where
 import Codec.Picture
+import Codec.FFmpeg.Common
 import Codec.FFmpeg.Decode
+import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Internal.Linear (V2(..))
 import Codec.FFmpeg.Types
 import Control.Applicative
 import Control.Arrow (first, (&&&))
@@ -96,14 +99,6 @@ juicyPixelStride :: forall a proxy. Pixel a => proxy a -> Int
 juicyPixelStride _ = 
   sizeOf (undefined :: PixelBaseComponent a) * componentCount (undefined :: a)
 
--- | Bytes-per-pixel for an 'AVPixelFormat'
-avPixelStride :: AVPixelFormat -> Maybe Int
-avPixelStride fmt
-  | fmt == avPixFmtGray8  = Just 1
-  | fmt == avPixFmtRgb24  = Just 3
-  | fmt == avPixFmtRgba   = Just 4
-  | otherwise = Nothing
-
 -- | Read RGB frames from a video stream.
 imageReader :: forall m p e.
                (Functor m, MonadIO m, Error e, MonadError e m,
@@ -124,3 +119,21 @@ imageReaderTime = fmap (first (runMaybeT . aux toJuicyImage))
   where aux g x = do (f,t) <- MaybeT x
                      f' <- MaybeT $ g f
                      return (f', t)
+
+-- | Open a target file for writing a video stream. When the returned
+-- function is applied to 'Nothing', the output stream is closed. Note
+-- that 'Nothing' /must/ be provided when finishing in order to
+-- properly terminate video encoding.
+-- 
+-- Support for source images that are of a different size to the
+-- output resolution is limited to non-palettized destination formats
+-- (i.e. those that are handled by @libswscaler@). Practically, this
+-- means that animated gif output is only supported if the source
+-- images are of the target resolution.
+imageWriter :: forall p. JuicyPixelFormat p
+            => EncodingParams -> FilePath -> IO (Maybe (Image p) -> IO ())
+imageWriter ep f = (. fmap aux) <$> frameWriter ep f
+  where aux img = let w = fromIntegral $ imageWidth img
+                      h = fromIntegral $ imageHeight img
+                      p = V.unsafeCast $ imageData img
+                  in  (juicyPixelFormat ([]::[p]), V2 w h, p)

@@ -2,7 +2,6 @@ module Main where
 import Codec.FFmpeg
 import Codec.Picture
 import Control.Monad (forM_)
-import qualified Data.Vector.Storable as V
 import Graphics.Rasterific
 import Graphics.Rasterific.Texture
 import Graphics.Rasterific.Transformations
@@ -103,9 +102,8 @@ main = do initFFmpeg
           -- animated gif! We can get a small GIF file by setting
           -- 'epPixelFormat' to 'avPixFmtRgb8', but it might not look
           -- very good.
-          w <- frameWriter params "logo.mov"
-          forM_ path $
-            w . Just . V.unsafeCast . imageData . logoTest (uniformTexture blue)
+          w <- imageWriter params "logo.mov"
+          forM_ path $ w . Just . logoTest (uniformTexture blue)
           w Nothing
   where params = defaultParams fgSizei fgSizei
         -- tinyGif = params { epPixelFormat = Just avPixFmtRgb8 }

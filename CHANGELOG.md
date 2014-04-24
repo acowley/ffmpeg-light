@@ -1,3 +1,11 @@
+0.5
+---
+
+* Juiced the Encode and Decode APIs.
+
+  Using `imageWriter` and `imageReader` provides a degree of pixel
+  format polymorphism based on JuicyPixels pixel types.
+
 0.4
 ---
 

@@ -13,20 +13,20 @@ firstFrame = do (getFrame, cleanup) <- imageReader "myVideo.mov"
 -- | Generate a video that pulses from light to dark.
 pulseVid :: IO ()
 pulseVid =
-  do boom <- frameWriter (defaultParams sz sz) "pulse.mov"
-     let go :: Int -> Int -> Int -> IO ()
+  do boom <- imageWriter (defaultParams sz sz) "pulse.mov"
+     let boom' = (boom :: Maybe (Image Pixel8) -> IO ())  . Just . Image sz sz
+         go :: Int -> Int -> Int -> IO ()
          go 600 _ _ = boom Nothing
-         go n d i = do boom (Just $ V.replicate (fromIntegral $ sz*sz*3) 
-                                                (fromIntegral i))
+         go n d i = do boom' $ V.replicate (sz*sz) (fromIntegral i)
                        let i' = i + d
                        if i' < 100 
                        then go (n+1) 1 101
                        else if i' > 255 
                             then go (n+1) (-1) 254
                             else go (n+1) d i'
-                
      go 0 (-1) 255
-  where sz = 64
+  where sz :: Integral a => a
+        sz = 64
 
 -- | Generate a video that fades from white to gray to white.
 testEncode :: IO ()

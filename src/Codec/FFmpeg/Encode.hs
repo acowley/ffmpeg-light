@@ -18,6 +18,7 @@ import Control.Monad.Error.Class
 import Data.Bits
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
+import Data.Traversable (for)
 import Data.Vector.Storable (Vector)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as VM
@@ -291,27 +292,32 @@ palettizeJuicy ep pix =
         doDither = epPreset ep == "dither"
 
 -- | Open a target file for writing a video stream. The function
--- returned may be used to write RGB images of the resolution given by
--- the provided 'EncodingParams'. The function will convert the
--- supplied RGB frame to YUV (specifically, @yuv420p@) before encoding
--- the image to the video stream. If this function is applied to
+-- returned may be used to write image frames (specified by a pixel
+-- format, resolution, and pixel data). If this function is applied to
 -- 'Nothing', then the output stream is closed. Note that 'Nothing'
 -- /must/ be provided to properly terminate video encoding.
-frameWriter :: EncodingParams -> FilePath -> IO (Maybe (Vector CUChar) -> IO ())
+-- 
+-- Support for source images that are of a different size to the
+-- output resolution is limited to non-palettized destination formats
+-- (i.e. those that are handled by @libswscaler@). Practically, this
+-- means that animated gif output only works if the source images are
+-- of the target resolution.
+frameWriter :: EncodingParams -> FilePath
+            -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
 frameWriter ep fname = do
   oc <- allocOutputContext fname
   (st,ctx) <- initStream ep oc
 
   dstFmt <- getPixelFormat ctx
   dstFrame <- initTempFrame ep dstFmt
+  let dstInfo = ImageInfo (epWidth ep) (epHeight ep) dstFmt
 
   -- Initialize the scaler that we use to convert RGB -> dstFmt
   -- Note that libswscaler does not support Pal8 as an output format.
   sws <- if dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8
          then Just <$> 
               swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
-                      (ImageInfo (epWidth ep) (epHeight ep) dstFmt)
-                      swsBilinear
+                      dstInfo swsBilinear
          else return Nothing
 
   pkt <- AVPacket <$> av_malloc (fromIntegral packetSize)
@@ -324,21 +330,24 @@ frameWriter ep fname = do
   codecTB <- getCodecContext st >>= getTimeBase
   isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
 
-  let palettizer | dstFmt == avPixFmtPal8 = Just $ palettizeJuicy ep
+  let checkPalCompat
+        | dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8 = const True
+        | otherwise = \(srcFmt, V2 srcW srcH, _) ->
+                        srcFmt == avPixFmtRgb24 &&
+                        srcW == epWidth ep &&
+                        srcH == epHeight ep
+
+      palettizer | dstFmt == avPixFmtPal8 = Just $ palettizeJuicy ep
                  | dstFmt == avPixFmtRgb8 = Just $ palettizeRGB8 ep
                  | otherwise =  Nothing
       frameTime = av_rescale_q 1 codecTB tb
-      mkImage :: Vector CUChar -> Image PixelRGB8
-      mkImage = let [w,h] = map fromIntegral [epWidth ep, epHeight ep]
-                in Image w h . V.unsafeCast
       resetPacket = do init_packet pkt
                        setData pkt nullPtr
                        setSize pkt 0
       writePacket = do setStreamIndex pkt stIndex
                        write_frame_check oc pkt
-      copyDstData = copyDstDataAux
 
-      copyDstDataAux pixels =
+      copyDstData (_,_,pixels) =
         void . V.unsafeWith pixels $ \ptr ->
           av_image_fill_arrays (castPtr $ hasData dstFrame)
                                (hasLineSize dstFrame)
@@ -347,10 +356,11 @@ frameWriter ep fname = do
                                (epWidth ep)
                                (epHeight ep)
                                1
-      scaleToDst sws' pixels = void $ swsScale sws' (mkImage pixels) dstFrame
-      fillDst = maybe copyDstData scaleToDst sws
+
+      scaleToDst sws' img = void $ swsScale sws' img dstFrame
+      fillDst = maybe copyDstData scaleToDst
       addRaw Nothing = return ()
-      addRaw (Just pixels) =
+      addRaw (Just (_, _, pixels)) =
         do resetPacket
            getPacketFlags pkt >>= setPacketFlags pkt . (.|. avPktFlagKey)
            --setSize pkt (fromIntegral $ V.length pixels)
@@ -364,10 +374,15 @@ frameWriter ep fname = do
       addEncoded Nothing = do resetPacket
                               encode_video_check ctx pkt Nothing >>=
                                 flip when (writePacket >> addEncoded Nothing)
-      addEncoded (Just pixels) =
+      addEncoded (Just srcImg@(srcFmt, V2 srcW srcH, pixels)) =
         do resetPacket
+           when (not $ checkPalCompat srcImg)
+                (error $ "Palettized output requires source images to be the \
+                         \same resolution as the output video")
            let pixels' = maybe pixels ($ V.unsafeCast pixels) palettizer
-           fillDst pixels'
+           sws' <- for sws $ \s ->
+                     swsReset s (ImageInfo srcW srcH srcFmt) dstInfo swsBilinear
+           fillDst sws' (srcFmt, V2 srcW srcH, pixels')
            getPts dstFrame >>= setPts dstFrame . (+ frameTime)
            encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
            -- Make sure the GC hasn't clobbered our palettized pixel data
@@ -381,5 +396,16 @@ frameWriter ep fname = do
                       av_free (getPtr pkt)
                       avio_close_check oc
                       avformat_free_context oc
-      go (Just pixels) = addFrame (Just pixels)
+      go img@(Just _) = addFrame img
   return go
+
+-- | Open a target file for writing a video stream. The function
+-- returned may be used to write RGB images of the resolution given by
+-- the provided 'EncodingParams' (i.e. the same resolution as the
+-- output video). If this function is applied to 'Nothing', then the
+-- output stream is closed. Note that 'Nothing' /must/ be provided to
+-- properly terminate video encoding.
+frameWriterRgb :: EncodingParams -> FilePath
+               -> IO (Maybe (Vector CUChar) -> IO ())
+frameWriterRgb ep f = (. fmap aux) <$> frameWriter ep f
+  where aux pixels = (avPixFmtRgb24, V2 (epWidth ep) (epHeight ep), pixels)

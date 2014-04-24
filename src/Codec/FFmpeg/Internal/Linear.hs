@@ -6,7 +6,10 @@ import Foreign.C.Types
 import Foreign.Ptr (castPtr)
 import Foreign.Storable
 
--- | A basic three component vector.
+-- | A two-component vector
+data V2 a = V2 !a !a
+
+-- | A three-component vector
 data V3 a = V3 !a !a !a
 
 instance Functor V3 where
@@ -29,6 +32,7 @@ qd (V3 x1 y1 z1) (V3 x2 y2 z2) = let dx = x2 - x1
                                      dz = z2 - z1
                                  in dx * dx + dy * dy + dz * dz
 
+-- | A four-component vector
 data V4 a = V4 !a !a !a !a
 
 instance Functor V4 where

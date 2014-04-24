@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.4
+version:             0.5
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -10,11 +10,10 @@ description:         Stream frames from an encoded video, or stream frames to
                      > import Codec.FFmpeg
                      > import Codec.Picture
                      > import Control.Applicative
-                     > import Control.Monad.Trans.Maybe
                      >
                      > go :: IO (Maybe DynamicImage)
-                     > go = do (getFrame, cleanup) <- frameReaderT "myVideo.mov"
-                     >         (runMaybeT $ getFrame >>= toJuicyT) <* cleanup
+                     > go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
+                     >         (fmap ImageRGB8 <$> getFrame) <* cleanup
                      .
                      Tested on OS X 10.9.2 with <http://www.ffmpeg.org FFmpeg> 2.2.1
                      installed via <http://brew.sh homebrew>.
