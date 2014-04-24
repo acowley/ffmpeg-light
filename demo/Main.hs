@@ -2,14 +2,13 @@ import Codec.FFmpeg
 import Codec.Picture
 import Control.Applicative
 import Control.Monad.Error
-import Control.Monad.Trans.Maybe
 import qualified Data.Vector.Storable as V
 import System.Environment
 
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
-firstFrame = do (getFrame, cleanup) <- frameReaderT "myVideo.mov"
-                (runMaybeT $ getFrame >>= toJuicyT) <* cleanup
+firstFrame = do (getFrame, cleanup) <- imageReader "myVideo.mov"
+                (fmap ImageRGB8 <$> getFrame) <* cleanup
 
 -- | Generate a video that pulses from light to dark.
 pulseVid :: IO ()
@@ -29,23 +28,26 @@ pulseVid =
      go 0 (-1) 255
   where sz = 64
 
+-- | Generate a video that fades from white to gray to white.
 testEncode :: IO ()
 testEncode = initFFmpeg >> pulseVid >> putStrLn "All done!"
 
+-- | Decoding example. Try changing 'ImageRGB8' to 'ImageY8' in the
+-- 'savePngImage' lines to automatically decode to grayscale images!
 testDecode :: FilePath -> IO ()
 testDecode vidFile = 
   do initFFmpeg
-     (getFrame, cleanup) <- frameReaderTime vidFile
+     (getFrame, cleanup) <- imageReaderTime vidFile
      frame1 <- getFrame
      case frame1 of
        Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
-                           saveJuicy "frame1.png" avf
+                           savePngImage "frame1.png" (ImageRGB8 avf)
        Nothing -> putStrLn "No frame for me :("
      replicateM_ 299 getFrame
      frame2 <- getFrame
      case frame2 of
        Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
-                           saveJuicy "frame2.png" avf
+                           savePngImage "frame2.png" (ImageRGB8 avf)
        Nothing -> putStrLn "No frame for me :("
      cleanup
      putStrLn "All done!"

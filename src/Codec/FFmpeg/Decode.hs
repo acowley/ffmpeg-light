@@ -131,31 +131,32 @@ read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
 
 -- | Read RGB frames from a video stream.
 frameReader :: (MonadIO m, Error e, MonadError e m)
-            => FilePath -> m (IO (Maybe AVFrame), IO ())
-frameReader fileName =
+            => AVPixelFormat -> FilePath -> m (IO (Maybe AVFrame), IO ())
+frameReader dstFmt fileName =
   do inputContext <- openInput fileName
      checkStreams inputContext
      (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
      _ <- openCodec ctx cod
-     prepareReader inputContext vidStreamIndex ctx
+     prepareReader inputContext vidStreamIndex dstFmt ctx
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 -- 
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderT :: (Functor m, MonadIO m, Error e, MonadError e m)
              => FilePath -> m (MaybeT IO AVFrame, IO ())
-frameReaderT = fmap (first MaybeT) . frameReader
+frameReaderT = fmap (first MaybeT) . frameReader avPixFmtRgb24
 
 -- | Read time stamped RGB frames from a video stream. Time is given
 -- in seconds from the start of the stream.
 frameReaderTime :: (MonadIO m, Error e, MonadError e m)
-                => FilePath -> m (IO (Maybe (AVFrame, Double)), IO ())
-frameReaderTime fileName =
+                => AVPixelFormat -> FilePath
+                -> m (IO (Maybe (AVFrame, Double)), IO ())
+frameReaderTime dstFmt fileName =
   do inputContext <- openInput fileName
      checkStreams inputContext
      (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
      _ <- openCodec ctx cod
-     (reader, cleanup) <- prepareReader inputContext vidStreamIndex ctx
+     (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
      AVRational num den <- liftIO $ getTimeBase ctx
      let (numl, dend) = (fromIntegral num, fromIntegral den)
          frameTime' frame = 
@@ -174,14 +175,14 @@ frameReaderTime fileName =
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderTimeT :: (Functor m, MonadIO m, Error e, MonadError e m)
                  => FilePath -> m (MaybeT IO (AVFrame, Double), IO ())
-frameReaderTimeT = fmap (first MaybeT) . frameReaderTime
+frameReaderTimeT = fmap (first MaybeT) . frameReaderTime avPixFmtRgb24
 
 -- | Construct an action that gets the next available frame, and an
 -- action to release all resources associated with this video stream.
 prepareReader :: (MonadIO m, Error e, MonadError e m)
-              => AVFormatContext -> CInt -> AVCodecContext
+              => AVFormatContext -> CInt -> AVPixelFormat -> AVCodecContext
               -> m (IO (Maybe AVFrame), IO ())
-prepareReader fmtCtx vidStream codCtx =
+prepareReader fmtCtx vidStream dstFmt codCtx =
   wrapIOError $
   do fRaw <- frame_alloc_check
      fRgb <- frame_alloc_check
@@ -192,12 +193,11 @@ prepareReader fmtCtx vidStream codCtx =
 
      setWidth fRgb w
      setHeight fRgb h
-     setPixelFormat fRgb avPixFmtRgb24
+     setPixelFormat fRgb dstFmt
 
      frame_get_buffer_check fRgb 32
 
-     sws <- swsInit (ImageInfo w h fmt) (ImageInfo w h avPixFmtRgb24) 
-                    swsBilinear
+     sws <- swsInit (ImageInfo w h fmt) (ImageInfo w h dstFmt) swsBilinear
 
      pkt <- AVPacket <$> mallocBytes packetSize
      let cleanup = do with fRgb av_frame_free
