@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.7.1
+version:             0.7.1.1
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -68,8 +68,9 @@ library
 executable demo
   if !flag(BuildDemo)
     buildable:      False
-  build-depends:    base < 5, vector, mtl, transformers,
-                    ffmpeg-light, JuicyPixels
+  build-depends:    base < 5, vector, mtl, transformers, JuicyPixels
+  if flag(BuildDemo)
+    build-depends:  ffmpeg-light
   hs-source-dirs:   demo
   main-is:          Main.hs
   default-language: Haskell2010
@@ -78,10 +79,9 @@ executable demo
 executable raster
   if !flag(BuildRasterDemo)
     buildable:      False
-  build-depends:    base < 5, vector, mtl, transformers,
-                    ffmpeg-light, JuicyPixels
+  build-depends:    base < 5, vector, mtl, transformers, JuicyPixels
   if flag(BuildRasterDemo)
-    build-depends:  Rasterific, linear
+    build-depends:  ffmpeg-light, Rasterific, linear
   hs-source-dirs:   demo
   main-is:          Raster.hs
   default-language: Haskell2010
