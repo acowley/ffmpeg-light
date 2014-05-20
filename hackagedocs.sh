@@ -1,4 +1,6 @@
 # Based on https://gist.github.com/Fuuzetsu/8276421
+# Usage: sh hackagedocs.sh ffmpeg-light 0.7.1 UserName Password
+
 cabal configure && cabal build && cabal haddock --hyperlink-source \
                                     --html-location='http://hackage.haskell.org/package/$pkg/docs' \
                                     --contents-location='http://hackage.haskell.org/package/$pkg'
