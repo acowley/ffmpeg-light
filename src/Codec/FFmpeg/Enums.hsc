@@ -33,6 +33,7 @@ newtype AVPixelFormat = AVPixelFormat CInt deriving (Eq, Storable)
  , AV_PIX_FMT_NONE\
  , AV_PIX_FMT_RGB24\
  , AV_PIX_FMT_RGBA\
+ , AV_PIX_FMT_BGRA\
  , AV_PIX_FMT_Y400A\
  , AV_PIX_FMT_RGB32\
  , AV_PIX_FMT_RGB32_1\

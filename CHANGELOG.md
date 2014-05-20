@@ -1,3 +1,21 @@
+0.7.1
+---
+
+* Bumped transformers dependency
+
+  Note: The use of mtl still triggers deprecation warnings from
+  transformers.
+
+* Fixed bug with changing source pixel format from RGB during
+  encoding.
+
+* Added BGRA pixel format
+
+0.7
+---
+
+* Simplified top-level API to focus on JuicyPixels-based interface
+
 0.6
 ---
 

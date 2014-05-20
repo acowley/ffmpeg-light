@@ -16,6 +16,7 @@ import Control.Applicative
 import Control.Monad (when, void)
 import Control.Monad.Error.Class
 import Data.Bits
+import Data.IORef
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Traversable (for)
@@ -315,9 +316,9 @@ frameWriter ep fname = do
   -- Initialize the scaler that we use to convert RGB -> dstFmt
   -- Note that libswscaler does not support Pal8 as an output format.
   sws <- if dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8
-         then Just <$> 
-              swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
+         then swsInit (ImageInfo (epWidth ep) (epHeight ep) avPixFmtRgb24)
                       dstInfo swsBilinear
+              >>= fmap Just . newIORef
          else return Nothing
 
   pkt <- AVPacket <$> av_malloc (fromIntegral packetSize)
@@ -380,8 +381,12 @@ frameWriter ep fname = do
                 (error $ "Palettized output requires source images to be the \
                          \same resolution as the output video")
            let pixels' = maybe pixels ($ V.unsafeCast pixels) palettizer
-           sws' <- for sws $ \s ->
-                     swsReset s (ImageInfo srcW srcH srcFmt) dstInfo swsBilinear
+           sws' <- for sws $ \sPtr -> do
+                     s <- readIORef sPtr
+                     s' <- swsReset s (ImageInfo srcW srcH srcFmt) dstInfo
+                                    swsBilinear
+                     writeIORef sPtr s'
+                     return s'
            fillDst sws' (srcFmt, V2 srcW srcH, pixels')
            getPts dstFrame >>= setPts dstFrame . (+ frameTime)
            encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
