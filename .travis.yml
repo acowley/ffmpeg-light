@@ -1,4 +1,5 @@
 language: haskell
 
 before_install:
+  - sudo apt-get update
   - sudo apt-get -qq -y install libavutil-dev libavformat-dev libavcodec-dev libswscale-dev
