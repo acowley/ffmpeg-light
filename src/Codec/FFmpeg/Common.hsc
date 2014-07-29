@@ -51,12 +51,9 @@ foreign import ccall "sws_scale"
 
 -- | Catch an IOException from an IO action and re-throw it in a
 -- wrapping monad transformer.
-wrapIOError :: (MonadIO m, Error e, MonadError e m) => IO a -> m a
-wrapIOError = liftIO . flip catchError (errMsg . show)
-
--- | Throw an error with a 'String' message.
-errMsg :: (Error e, MonadError e m) => String -> m a
-errMsg = throwError . strMsg
+wrapIOError :: (MonadIO m, MonadError String m) => IO a -> m a
+wrapIOError io = liftIO (catchError (fmap Right io) (return . Left . show))
+                 >>= either throwError return
 
 -- * Wrappers that may throw 'IOException's.
 
@@ -64,7 +61,7 @@ errMsg = throwError . strMsg
 frame_alloc_check :: IO AVFrame
 frame_alloc_check = do r <- av_frame_alloc
                        when (getPtr r == nullPtr)
-                            (errMsg "Couldn't allocate frame")
+                            (error "Couldn't allocate frame")
                        return r
 
 -- | Allocate new buffer(s) for audio or video data with the required
@@ -75,7 +72,7 @@ frame_alloc_check = do r <- av_frame_alloc
 frame_get_buffer_check :: AVFrame -> CInt -> IO ()
 frame_get_buffer_check f x = do r <- av_frame_get_buffer f x
                                 when (r /= 0)
-                                     (errMsg "Failed to allocate buffers")
+                                     (error "Failed to allocate buffers")
 
 -- | Bytes-per-pixel for an 'AVPixelFormat'
 avPixelStride :: AVPixelFormat -> Maybe Int

@@ -1,3 +1,25 @@
+0.8
+---
+
+* Update to transformers-0.4.1 and mtl-2.2.1
+  * Changed decode-related types to accomodate deprecation of the
+    `Error` class. This means that if you want to initialize decoders
+    in your own transformer stack that has a `MonadError` instance,
+    you will need to use the variants with names suffixed by a "T"
+    (for transformer).
+
+* Update to ffmpeg 2.3
+
+  * Address deprecation warning
+
+    `Using AVStream.codec.time_base as a timebase hint to the muxer is
+       deprecated. Set AVStream.time_base instead.`
+
+  * Address "non-strictly-monotonic PTS" warning
+
+* Rasterific bump
+  * Rasterific exports its own linear algebra types as of 0.3
+
 0.7.1
 ---
 

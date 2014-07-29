@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.7.1.1
+version:             0.8
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -15,7 +15,7 @@ description:         Stream frames from an encoded video, or stream frames to
                      > go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
                      >         (fmap ImageRGB8 <$> getFrame) <* cleanup
                      .
-                     Tested on OS X 10.9.2 with <http://www.ffmpeg.org FFmpeg> 2.2.1
+                     Tested on OS X 10.9.4 with <http://www.ffmpeg.org FFmpeg> 2.3
                      installed via <http://brew.sh homebrew>.
 
 license:             BSD3
@@ -56,8 +56,8 @@ library
   build-tools:         hsc2hs
   build-depends:       base >=4.6 && < 5,
                        vector >= 0.10.9 && < 0.11,
-                       transformers >= 0.3 && < 0.5,
-                       mtl >= 2.1.3 && < 2.3,
+                       transformers >= 0.4.1 && < 0.5,
+                       mtl >= 2.2.1 && < 2.3,
                        JuicyPixels >= 3.1 && < 3.2
   pkgconfig-depends:   libavutil, libavformat, libavcodec, libswscale
   hs-source-dirs:      src
@@ -81,7 +81,7 @@ executable raster
     buildable:      False
   build-depends:    base < 5, vector, mtl, transformers, JuicyPixels
   if flag(BuildRasterDemo)
-    build-depends:  ffmpeg-light, Rasterific, linear
+    build-depends:  ffmpeg-light, Rasterific >= 0.3
   hs-source-dirs:   demo
   main-is:          Raster.hs
   default-language: Haskell2010

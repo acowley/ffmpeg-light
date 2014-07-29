@@ -1,7 +1,7 @@
 import Codec.FFmpeg
 import Codec.Picture
 import Control.Applicative
-import Control.Monad.Error
+import Control.Monad (replicateM_)
 import qualified Data.Vector.Storable as V
 import System.Environment
 

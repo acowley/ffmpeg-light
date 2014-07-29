@@ -3,9 +3,9 @@ import Codec.FFmpeg
 import Codec.Picture
 import Control.Monad (forM_)
 import Graphics.Rasterific
+import Graphics.Rasterific.Linear
 import Graphics.Rasterific.Texture
 import Graphics.Rasterific.Transformations
-import Linear
 
 -- | The Rasterific logo sample shape.
 logo :: Int -> Bool -> Vector -> [Primitive]
@@ -36,7 +36,7 @@ bezierInterp (Bezier a b c) = go 0
           | otherwise = let q0 = a + v1 ^* t
                             q1 = b + v2 ^* t
                             vq = q1 - q0
-                        in q0 + t *^ vq : (go $! t + 0.05)
+                        in q0 + vq ^* t : (go $! t + 0.05)
 
 -- | Our animation path.
 path :: [Point]

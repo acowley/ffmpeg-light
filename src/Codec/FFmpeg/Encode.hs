@@ -14,7 +14,6 @@ import Codec.FFmpeg.Types
 import Codec.Picture
 import Control.Applicative
 import Control.Monad (when, void)
-import Control.Monad.Error.Class
 import Data.Bits
 import Data.IORef
 import Data.Maybe (fromMaybe)
@@ -140,23 +139,23 @@ checkFlag flg = \x -> (flg .&. x) /= allZeroBits
 initStream :: EncodingParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
 initStream ep _
   | (epWidth ep `rem` 2, epHeight ep `rem` 2) /= (0,0) =
-    throwError $ strMsg "Video dimensions must be multiples of two"
+    error "Video dimensions must be multiples of two"
 initStream ep oc = do
   -- Use the codec suggested by the output format, or override with
   -- the user's choice.
   codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return (epCodec ep)
   cod <- avcodec_find_encoder codec
   when (getPtr cod == nullPtr)
-       (errMsg "Couldn't find encoder")
+       (error "Couldn't find encoder")
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
-
+  let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
+  setTimeBase st framePeriod
   ctx <- getCodecContext st
   setWidth ctx (epWidth ep)
   setHeight ctx (epHeight ep)
-  let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
-  setTimeBase ctx framePeriod
+  -- setTimeBase ctx framePeriod
   setPixelFormat ctx $ case epPixelFormat ep of
                          Just fmt -> fmt
                          Nothing
@@ -180,7 +179,7 @@ initStream ep oc = do
         getPrivData ctx >>= \pd -> av_opt_set pd kStr vStr 0
 
   rOpen <- open_codec ctx cod nullPtr
-  when (rOpen < 0) (throwError $ strMsg "Couldn't open codec")
+  when (rOpen < 0) (error "Couldn't open codec")
 
   return (st, ctx)
 
@@ -198,7 +197,7 @@ initTempFrame ep fmt = do
   -- For palettized images, we will provide our own buffer.
   if fmt == avPixFmtRgb8 || fmt == avPixFmtPal8
   then do r <- av_image_fill_linesizes (hasLineSize frame) fmt (epWidth ep)
-          when (r < 0) (errMsg "Error filling temporary frame line sizes")
+          when (r < 0) (error "Error filling temporary frame line sizes")
   else frame_get_buffer_check frame 32
   return frame
 
@@ -212,10 +211,10 @@ allocOutputContext fname = do
                    ocTmp (AVOutputFormat nullPtr)
                    nullPtr fname'
           when (r < 0)
-               (errMsg "Couldn't allocate output format context")
+               (error "Couldn't allocate output format context")
           peek ocTmp
   when (getPtr oc == nullPtr)
-       (errMsg "Couldn't allocate output AVFormatContext")
+       (error "Couldn't allocate output AVFormatContext")
   return oc
 
 -- | Open the given file for writing.
@@ -223,12 +222,12 @@ avio_open_check :: AVFormatContext -> String -> IO ()
 avio_open_check oc fname =
   do r <- withCString fname $ \cstr ->
             avio_open (hasIOContext oc) cstr avioFlagWrite
-     when (r < 0) (errMsg "Error opening IO for writing")
+     when (r < 0) (error "Error opening IO for writing")
 
 -- | Close an open IO context.
 avio_close_check :: AVFormatContext -> IO ()
 avio_close_check oc = do r <- getIOContext oc >>= avio_close
-                         when (r /= 0) (errMsg "Error closing IO")
+                         when (r /= 0) (error "Error closing IO")
 
 -- | Returns 'True' if the 'AVPacket' was updated with new output
 -- data; 'False' otherwise.
@@ -236,7 +235,7 @@ encode_video_check :: AVCodecContext -> AVPacket -> Maybe AVFrame -> IO Bool
 encode_video_check ctx pkt frame =
   alloca $ \gotOutput -> do
     r <- avcodec_encode_video2 ctx pkt frame' gotOutput
-    when (r < 0) (errMsg "Error encoding frame")
+    when (r < 0) (error "Error encoding frame")
     (> 0) <$> peek gotOutput
   where frame' = fromMaybe (AVFrame nullPtr) frame
 
@@ -244,19 +243,19 @@ encode_video_check ctx pkt frame =
 -- an output media file.
 write_header_check :: AVFormatContext -> IO ()
 write_header_check oc = do r <- avformat_write_header oc nullPtr
-                           when (r < 0) (errMsg "Error writing header")
+                           when (r < 0) (error "Error writing header")
 
 -- | Write a packet to an output media file.
 write_frame_check :: AVFormatContext -> AVPacket -> IO ()
 write_frame_check oc pkt = do r <- av_write_frame oc pkt
-                              when (r < 0) (errMsg "Error writing frame")
+                              when (r < 0) (error "Error writing frame")
 
 -- | Write the stream trailer to an output media file and free the
 -- private data. May only be called after a successful call to
 -- 'write_header_check'.
 write_trailer_check :: AVFormatContext -> IO ()
 write_trailer_check oc = do r <- av_write_trailer oc
-                            when (r /= 0) (errMsg "Error writing trailer")
+                            when (r /= 0) (error "Error writing trailer")
 
 -- | Quantize RGB24 pixels to the systematic RGB8 color palette. The
 -- image data has space for a palette appended to be compliant with
@@ -322,13 +321,19 @@ frameWriter ep fname = do
          else return Nothing
 
   pkt <- AVPacket <$> av_malloc (fromIntegral packetSize)
+  setPts pkt 0
 
   stIndex <- getStreamIndex st
   avio_open_check oc fname
   write_header_check oc
 
+  let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
+
+  -- The stream time_base can be changed by the call to
+  -- 'write_header_check', so we read it back here to establish a way
+  -- of scaling the nominal, desired frame rate (given by
+  -- 'framePeriod') to the stream's time_base.
   tb <- getTimeBase st
-  codecTB <- getCodecContext st >>= getTimeBase
   isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
 
   let checkPalCompat
@@ -341,7 +346,7 @@ frameWriter ep fname = do
       palettizer | dstFmt == avPixFmtPal8 = Just $ palettizeJuicy ep
                  | dstFmt == avPixFmtRgb8 = Just $ palettizeRGB8 ep
                  | otherwise =  Nothing
-      frameTime = av_rescale_q 1 codecTB tb
+      frameTime = av_rescale_q 1 framePeriod tb
       resetPacket = do init_packet pkt
                        setData pkt nullPtr
                        setSize pkt 0
@@ -366,9 +371,10 @@ frameWriter ep fname = do
            getPacketFlags pkt >>= setPacketFlags pkt . (.|. avPktFlagKey)
            --setSize pkt (fromIntegral $ V.length pixels)
            setSize pkt (fromIntegral pictureSize)
-           getPts dstFrame >>= setPts dstFrame . (+ frameTime)
-           getPts dstFrame >>= setPts pkt
-           getPts dstFrame >>= setDts pkt
+           timeStamp <- (+ frameTime) <$> getPts dstFrame
+           setPts dstFrame timeStamp
+           setPts pkt timeStamp
+           -- getPts dstFrame >>= setDts pkt
            V.unsafeWith pixels $ \ptr -> do
              setData pkt (castPtr ptr)
              writePacket

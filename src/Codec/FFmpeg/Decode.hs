@@ -61,12 +61,12 @@ foreign import ccall "avformat_close_input"
 -- * FFmpeg Decoding Interface
 
 -- | Open an input media file.
-openInput :: (MonadIO m, Error e, MonadError e m) => String -> m AVFormatContext
+openInput :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
 openInput filename = 
   wrapIOError . alloca $ \ctx ->
     withCString filename $ \cstr ->
       do r <- avformat_open_input ctx cstr nullPtr nullPtr
-         when (r /= 0) (errMsg "Error opening file")
+         when (r /= 0) (error "Error opening file")
          peek ctx
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
@@ -75,30 +75,30 @@ frameAsPicture :: AVFrame -> AVPicture
 frameAsPicture = AVPicture . getPtr
 
 -- | Find a codec given by name.
-findDecoder :: (MonadIO m, Error e, MonadError e m) => String -> m AVCodec
+findDecoder :: (MonadIO m, MonadError String m) => String -> m AVCodec
 findDecoder name = 
   do r <- liftIO $ withCString name avcodec_find_decoder_by_name
      when (getPtr r == nullPtr)
-          (errMsg $ "Unsupported codec: " ++ show name)
+          (throwError $ "Unsupported codec: " ++ show name)
      return r
 
 -- | Read packets of a media file to get stream information. This is
 -- useful for file formats with no headers such as MPEG.
-checkStreams :: (MonadIO m, Error e, MonadError e m) => AVFormatContext -> m ()
+checkStreams :: (MonadIO m, MonadError String m) => AVFormatContext -> m ()
 checkStreams ctx = 
   do r <- liftIO $ avformat_find_stream_info ctx nullPtr
-     when (r < 0) (errMsg "Couldn't find stream information")
+     when (r < 0) (throwError "Couldn't find stream information")
 
 -- | Searches for a video stream in an 'AVFormatContext'. If one is
 -- found, returns the index of the stream in the container, and its
 -- associated 'AVCodecContext' and 'AVCodec'.
-findVideoStream :: (MonadIO m, Error e, MonadError e m)
+findVideoStream :: (MonadIO m, MonadError String m)
                 => AVFormatContext -> m (CInt, AVCodecContext, AVCodec)
 findVideoStream fmt = do
   wrapIOError . alloca $ \codec -> do
       poke codec (AVCodec nullPtr)
       i <- av_find_best_stream fmt avmediaTypeVideo (-1) (-1) codec 0
-      when (i < 0) (errMsg "Couldn't find a video stream")
+      when (i < 0) (error "Couldn't find a video stream")
       cod <- peek codec
       streams <- getStreams fmt
       vidStream <- peek (advancePtr streams (fromIntegral i))
@@ -107,30 +107,30 @@ findVideoStream fmt = do
 
 -- | Find a registered decoder with a codec ID matching that found in
 -- the given 'AVCodecContext'.
-getDecoder :: (MonadIO m, Error e, MonadError e m)
+getDecoder :: (MonadIO m, MonadError String m)
            => AVCodecContext -> m AVCodec
 getDecoder ctx = do p <- liftIO $ getCodecID ctx >>= avcodec_find_decoder
-                    when (getPtr p == nullPtr) (errMsg "Unsupported codec")
+                    when (getPtr p == nullPtr) (throwError "Unsupported codec")
                     return p
 
 -- | Initialize the given 'AVCodecContext' to use the given
 -- 'AVCodec'. **NOTE**: This function is not thread safe!
-openCodec :: (MonadIO m, Error e, MonadError e m)
+openCodec :: (MonadIO m, MonadError String m)
           => AVCodecContext -> AVCodec -> m AVDictionary
 openCodec ctx cod = 
   wrapIOError . alloca $ \dict -> do
     poke dict (AVDictionary nullPtr)
     r <- open_codec ctx cod dict
-    when (r < 0) (errMsg "Couldn't open decoder")
+    when (r < 0) (error "Couldn't open decoder")
     peek dict
 
 -- | Return the next frame of a stream.
 read_frame_check :: AVFormatContext -> AVPacket -> IO ()
 read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
-                              when (r < 0) (errMsg "Frame read failed")
+                              when (r < 0) (error "Frame read failed")
 
 -- | Read frames of the given 'AVPixelFormat' from a video stream.
-frameReader :: (MonadIO m, Error e, MonadError e m)
+frameReader :: (MonadIO m, MonadError String m)
             => AVPixelFormat -> FilePath -> m (IO (Maybe AVFrame), IO ())
 frameReader dstFmt fileName =
   do inputContext <- openInput fileName
@@ -142,14 +142,14 @@ frameReader dstFmt fileName =
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 -- 
 -- > frameReaderT = fmap (first MaybeT) . frameReader
-frameReaderT :: (Functor m, MonadIO m, Error e, MonadError e m)
+frameReaderT :: (Functor m, MonadIO m, MonadError String m)
              => FilePath -> m (MaybeT IO AVFrame, IO ())
 frameReaderT = fmap (first MaybeT) . frameReader avPixFmtRgb24
 
 -- | Read time stamped frames of the given 'AVPixelFormat' from a
 -- video stream. Time is given in seconds from the start of the
 -- stream.
-frameReaderTime :: (MonadIO m, Error e, MonadError e m)
+frameReaderTime :: (MonadIO m, MonadError String m)
                 => AVPixelFormat -> FilePath
                 -> m (IO (Maybe (AVFrame, Double)), IO ())
 frameReaderTime dstFmt fileName =
@@ -174,13 +174,13 @@ frameReaderTime dstFmt fileName =
 -- transformer.
 -- 
 -- > frameReaderT = fmap (first MaybeT) . frameReader
-frameReaderTimeT :: (Functor m, MonadIO m, Error e, MonadError e m)
+frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
                  => FilePath -> m (MaybeT IO (AVFrame, Double), IO ())
 frameReaderTimeT = fmap (first MaybeT) . frameReaderTime avPixFmtRgb24
 
 -- | Construct an action that gets the next available frame, and an
 -- action to release all resources associated with this video stream.
-prepareReader :: (MonadIO m, Error e, MonadError e m)
+prepareReader :: (MonadIO m, MonadError String m)
               => AVFormatContext -> CInt -> AVPixelFormat -> AVCodecContext
               -> m (IO (Maybe AVFrame), IO ())
 prepareReader fmtCtx vidStream dstFmt codCtx =

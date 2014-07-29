@@ -5,6 +5,7 @@ module Codec.FFmpeg (-- * Initialization
                      initFFmpeg, 
                      -- * Decoding
                      imageReader, imageReaderTime,
+                     imageReaderT, imageReaderTimeT,
                      -- * Encoding
                      EncodingParams(..), defaultParams, imageWriter,
                      -- * Types and Enums
