@@ -107,4 +107,4 @@ main = do initFFmpeg
           w Nothing
   where params = defaultParams fgSizei fgSizei
         -- tinyGif = params { epPixelFormat = Just avPixFmtRgb8 }
-        -- prettyGif = params { preset = "dither" }
+        -- prettyGif = params { epPreset = "dither" }
