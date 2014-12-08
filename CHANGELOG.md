@@ -1,3 +1,8 @@
+0.8.1
+---
+
+* Update raster demo to use new JuicyPixels-3.2 API
+
 0.8
 ---
 

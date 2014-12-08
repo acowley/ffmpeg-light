@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.8
+version:             0.8.1
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -58,7 +58,7 @@ library
                        vector >= 0.10.9 && < 0.11,
                        transformers >= 0.4.1 && < 0.5,
                        mtl >= 2.2.1 && < 2.3,
-                       JuicyPixels >= 3.1 && < 3.2
+                       JuicyPixels >= 3.1 && < 3.3
   pkgconfig-depends:   libavutil, libavformat, libavcodec, libswscale
   hs-source-dirs:      src
   include-dirs:        src
@@ -79,7 +79,7 @@ executable demo
 executable raster
   if !flag(BuildRasterDemo)
     buildable:      False
-  build-depends:    base < 5, vector, mtl, transformers, JuicyPixels
+  build-depends:    base < 5, vector, mtl, transformers, JuicyPixels >= 3.2
   if flag(BuildRasterDemo)
     build-depends:  ffmpeg-light, Rasterific >= 0.3
   hs-source-dirs:   demo

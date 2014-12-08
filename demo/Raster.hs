@@ -1,6 +1,7 @@
 module Main where
 import Codec.FFmpeg
 import Codec.Picture
+import Codec.Picture.Types (dropTransparency)
 import Control.Monad (forM_)
 import Graphics.Rasterific
 import Graphics.Rasterific.Linear
@@ -54,9 +55,9 @@ path = concatMap bezierInterp $
   where is = 15
         is2 = is + is
 
-background, blue :: PixelRGB8
-background = PixelRGB8 128 128 128
-blue = PixelRGB8 0 020 150
+background, blue :: PixelRGBA8
+background = PixelRGBA8 128 128 128 255
+blue = PixelRGBA8 0 020 150 255
 
 -- `fgSize` will determine our image size. `bgSize` is smaller so we
 -- see the effect of the `SamplerRepeat` sampler.
@@ -71,20 +72,20 @@ fgSizei = floor fgSize
 
 -- | A ring with a drop-shadow on the inside. The texture is repeated,
 -- resulting in concentric rings centered at @(200,200)@.
-bgGrad :: Texture PixelRGB8
+bgGrad :: Texture PixelRGBA8
 bgGrad = withSampler SamplerRepeat $
          radialGradientTexture gradDef (V2 bgSize bgSize) (bgSize * 0.5)
-  where gradDef = [(0  , PixelRGB8 255 255 255)
-                  ,(0.5, PixelRGB8 255 255 255)
-                  ,(0.5, PixelRGB8 255 255 255)
-                  ,(0.525, PixelRGB8 255 255 255)
-                  ,(0.675, PixelRGB8 128 128 128)
-                  ,(0.75, PixelRGB8 100 149 237)
-                  ,(1, PixelRGB8 100 149 237)
+  where gradDef = [(0  , PixelRGBA8 255 255 255 255)
+                  ,(0.5, PixelRGBA8 255 255 255 255)
+                  ,(0.5, PixelRGBA8 255 255 255 255)
+                  ,(0.525, PixelRGBA8 255 255 255 255)
+                  ,(0.675, PixelRGBA8 128 128 128 255)
+                  ,(0.75, PixelRGBA8 100 149 237 255)
+                  ,(1, PixelRGBA8 100 149 237 255)
                   ]
 
 -- | Adapted from the Rasterific logo example.
-logoTest :: Texture PixelRGB8 -> Vector -> Image PixelRGB8
+logoTest :: Texture PixelRGBA8 -> Vector -> Image PixelRGBA8
 logoTest texture insetOrigin = 
   renderDrawing fgSizei fgSizei background (bg >> drawing)
   where 
@@ -98,11 +99,15 @@ logoTest texture insetOrigin =
 -- | Animate the logo and write it to a video file!
 main :: IO ()
 main = do initFFmpeg
-          -- Change the output file extension to ".gif" to get an
-          -- animated gif! We can get a small GIF file by setting
-          -- 'epPixelFormat' to 'avPixFmtRgb8', but it might not look
-          -- very good.
+          -- Change the output file extension to ".gif" and drop
+          -- transparency to get an animated gif! We can get a small
+          -- GIF file by setting 'epPixelFormat' to 'avPixFmtRgb8',
+          -- but it might not look very good.
+
           w <- imageWriter params "logo.mov"
+          -- w <- (. fmap (pixelMap dropTransparency))
+          --      `fmap` imageWriter params "logo.gif"
+
           forM_ path $ w . Just . logoTest (uniformTexture blue)
           w Nothing
   where params = defaultParams fgSizei fgSizei
