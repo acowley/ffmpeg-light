@@ -65,7 +65,8 @@ openInput :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
 openInput filename = 
   wrapIOError . alloca $ \ctx ->
     withCString filename $ \cstr ->
-      do r <- avformat_open_input ctx cstr nullPtr nullPtr
+      do poke (castPtr ctx) nullPtr
+         r <- avformat_open_input ctx cstr nullPtr nullPtr
          when (r /= 0) (error "Error opening file")
          peek ctx
 
