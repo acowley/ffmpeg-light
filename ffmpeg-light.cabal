@@ -49,12 +49,15 @@ library
                        Codec.FFmpeg.Encode,
                        Codec.FFmpeg.Enums,
                        Codec.FFmpeg.Juicy,
+                       Codec.FFmpeg.Probe,
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,
                        Codec.FFmpeg.Internal.Linear
   build-tools:         hsc2hs
   build-depends:       base >=4.6 && < 5,
+                       either,
+                       exceptions,
                        vector >= 0.10.9 && < 0.11,
                        transformers >= 0.4.1 && < 0.5,
                        mtl >= 2.2.1 && < 2.3,
