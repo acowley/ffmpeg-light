@@ -67,7 +67,7 @@ openInput filename =
     withCString filename $ \cstr ->
       do poke (castPtr ctx) nullPtr
          r <- avformat_open_input ctx cstr nullPtr nullPtr
-         when (r /= 0) (error "Error opening file")
+         when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
          peek ctx
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
@@ -99,7 +99,7 @@ findVideoStream fmt = do
   wrapIOError . alloca $ \codec -> do
       poke codec (AVCodec nullPtr)
       i <- av_find_best_stream fmt avmediaTypeVideo (-1) (-1) codec 0
-      when (i < 0) (error "Couldn't find a video stream")
+      when (i < 0) (fail "Couldn't find a video stream")
       cod <- peek codec
       streams <- getStreams fmt
       vidStream <- peek (advancePtr streams (fromIntegral i))
@@ -122,13 +122,13 @@ openCodec ctx cod =
   wrapIOError . alloca $ \dict -> do
     poke dict (AVDictionary nullPtr)
     r <- open_codec ctx cod dict
-    when (r < 0) (error "Couldn't open decoder")
+    when (r < 0) (fail "Couldn't open decoder")
     peek dict
 
 -- | Return the next frame of a stream.
 read_frame_check :: AVFormatContext -> AVPacket -> IO ()
 read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
-                              when (r < 0) (error "Frame read failed")
+                              when (r < 0) (fail "Frame read failed")
 
 -- | Read frames of the given 'AVPixelFormat' from a video stream.
 frameReader :: (MonadIO m, MonadError String m)
