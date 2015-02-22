@@ -44,6 +44,7 @@ newtype AvFormat m a = AvFormat { unAvFormat :: ReaderT AVFormatContext m a }
         , Monad
         , MonadIO
         , MonadReader AVFormatContext
+        , MonadTrans
         )
 
 withAvFile :: (MonadMask m, MonadIO m) => String -> AvFormat m a -> m a
@@ -72,16 +73,17 @@ formatMetadata = ask >>= liftIO . (#peek AVFormatContext, metadata) . getPtr
 -- stream - level stuff
 -------------------------------------------------------------------------------
 
-newtype AvStreamT m a = AvStreamT { unAvStreamT :: ReaderT AVStream (AvFormat m) a }
+newtype AvStreamT m a = AvStreamT { unAvStreamT :: ReaderT AVStream (m) a }
     deriving
         ( Applicative
         , Functor
         , Monad
         , MonadIO
         , MonadReader AVStream
+        , MonadTrans
         )
 
-withStream :: MonadIO m => Int -> AvStreamT m a -> AvFormat m a
+withStream :: (MonadIO m) => Int -> AvStreamT (AvFormat m) a -> AvFormat m a
 withStream sid f = nbStreams >>= \ns -> if sid >= ns
     then error $ show sid ++ " >= " ++ show ns
     else do
