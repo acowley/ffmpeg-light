@@ -5,21 +5,26 @@
     #-}
 
 module Codec.FFmpeg.Probe (
-    withAvFile, nbStreams, formatName,
+    -- * Files
+    withAvFile, nbStreams, formatName, formatMetadata,
 
     -- * Streams
     AvStreamT, withStream, codecContext, codecName,
-    codecMediaTypeName, streamBitrate, codec
+    codecMediaTypeName, streamBitrate, streamMetadata,
+    codec,
+    
+    -- * Dictionaries
+    dictFoldM_
     ) where
 
 import Control.Applicative ( Applicative )
 import Control.Monad.Catch ( MonadMask, finally )
 import Control.Monad.Reader
 import Control.Monad.Trans.Either
-import Foreign.C.String ( CString, peekCString )
+import Foreign.C.String ( CString, peekCString, withCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Utils ( with )
-import Foreign.Ptr ( nullPtr )
+import Foreign.Ptr ( Ptr, nullPtr )
 import Foreign.Storable
 
 import Codec.FFmpeg.Enums
@@ -60,6 +65,9 @@ formatName = ask >>= \ctx -> liftIO $
     (#peek AVInputFormat, name) >>=
     peekCString
 
+formatMetadata :: MonadIO m => AvFormat m AVDictionary
+formatMetadata = ask >>= liftIO . (#peek AVFormatContext, metadata) . getPtr
+
 -------------------------------------------------------------------------------
 -- stream - level stuff
 -------------------------------------------------------------------------------
@@ -83,7 +91,7 @@ withStream sid f = nbStreams >>= \ns -> if sid >= ns
 
 codecContext :: MonadIO m => AvStreamT m (Maybe AVCodecContext)
 codecContext = do
-    p <- ask >>= (\x -> liftIO $ (#peek AVStream, codec) (getPtr x))
+    p <- ask >>= (liftIO . (#peek AVStream, codec) . getPtr)
     if (p /= nullPtr)
         then return $ Just $ AVCodecContext p
         else return Nothing
@@ -106,6 +114,34 @@ codecName cctx = liftIO $ getCodecID cctx >>= avcodec_get_name >>= peekCString
 streamBitrate :: MonadIO m => AVCodecContext -> AvStreamT m Int
 streamBitrate cctx = liftIO $ getBitRate cctx >>= return . fromIntegral
 
+streamMetadata :: MonadIO m => AvStreamT m AVDictionary
+streamMetadata = ask >>= liftIO . (#peek AVStream, metadata) . getPtr
+
+-------------------------------------------------------------------------------
+-- dictionaries
+-------------------------------------------------------------------------------
+
+dictFoldM_
+    :: MonadIO m
+    => ((String, String) -> m ())
+    -> AVDictionary
+    -> m ()
+dictFoldM_ f d =
+    let
+        flags = (#const AV_DICT_IGNORE_SUFFIX + AV_DICT_DONT_STRDUP_KEY + AV_DICT_DONT_STRDUP_VAL)
+        next ep = do
+            e' <- liftIO $ withCString "" $ \s -> av_dict_get d s ep flags
+            if (e' == nullPtr)
+                then return ()
+                else do
+                    k <- liftIO $ (#peek AVDictionaryEntry, key) e' >>= peekCString
+                    v <- liftIO $ (#peek AVDictionaryEntry, value) e' >>= peekCString
+                    f (k, v)
+                    next e'
+    in do
+        -- e <- liftIO $ malloc >>= \m -> poke m nullPtr >> return m
+        next nullPtr
+
 -------------------------------------------------------------------------------
 -- helpers
 -------------------------------------------------------------------------------
@@ -122,3 +158,7 @@ foreign import ccall "av_get_media_type_string"
 
 foreign import ccall "avcodec_get_name"
   avcodec_get_name :: AVCodecID -> IO CString
+
+foreign import ccall "av_dict_get"
+  av_dict_get :: AVDictionary -> CString -> Ptr () -> CInt -> IO (Ptr ())
+  
