@@ -26,4 +26,12 @@ README on github.
 
 Tested on OS X 10.9.2 with FFmpeg 2.2.1 installed via [homebrew](http://brew.sh).
 
+Debian and Ubuntu users: Your package manager's `ffmpeg` package is actually a not-quite-compatible fork of the `ffmpeg` project. To use `ffmpeg-light`, run the included `ffmpeg-ubuntu-compile.sh` script as regular (non-root) user. This sets up build an ffmpeg library build in your home directory. Configure your projects that depend on `ffmpeg-light` with a modified `PKG_CONFIG_PATH`:
+
+```bash
+PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" cabal configure --disable-shared my-project
+```
+
+There are signs that the next Ubuntu will release with the original `ffmpeg` and development packages.
+
 [![Build Status](https://travis-ci.org/acowley/ffmpeg-light.png)](https://travis-ci.org/acowley/ffmpeg-light)
