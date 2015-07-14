@@ -1,3 +1,8 @@
+0.8.2
+---
+
+* Added probe features
+
 0.8.1
 ---
 
