@@ -2,3 +2,7 @@ cabal.sandbox.config
 .cabal-sandbox
 dist
 .vagrant
+/buildplan
+/.cabal
+/.cabbages
+/TAGS
