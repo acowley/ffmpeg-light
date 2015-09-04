@@ -3,6 +3,7 @@
 module Codec.FFmpeg.Types where
 import Codec.FFmpeg.Enums
 import Control.Applicative
+import Control.Monad (zipWithM_,when)
 import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.Ptr
@@ -24,11 +25,44 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField Streams, (Ptr AVStream)
 #mkField OutputFormat, AVOutputFormat
 #mkField IOContext, AVIOContext
+#mkField InputFormat, AVInputFormat
 
 #hasField AVFormatContext, NumStreams, nb_streams
 #hasField AVFormatContext, Streams, streams
 #hasField AVFormatContext, OutputFormat, oformat
+#hasField AVFormatContext, InputFormat, iformat
 #hasField AVFormatContext, IOContext, pb
+
+setFilename :: AVFormatContext -> String -> IO ()
+setFilename ctx fn =
+    do let ptr  = getPtr ctx
+           dst   = (#ptr AVFormatContext, filename) ptr
+           bytes = map (fromIntegral . fromEnum) fn
+       zipWithM_ (pokeElemOff dst) bytes [(0 :: CInt) ..]
+
+
+foreign import ccall "av_input_video_device_next"
+  av_input_video_device_next :: AVInputFormat -> IO AVInputFormat
+
+setCamera :: AVFormatContext -> IO ()
+setCamera ctx = do
+    ipt <- getCameraAVInputFormat (AVInputFormat nullPtr)
+    setInputFormat ctx ipt
+  where
+    -- Currently straight-line, but we can filter each 'nxt' based on
+    -- predicates, such as device ('avfoundtion', 'v4l2' etc) in the
+    -- future, if needed.
+    getCameraAVInputFormat :: AVInputFormat -> IO AVInputFormat
+    getCameraAVInputFormat p = do
+        nxt <- av_input_video_device_next p
+        when (nullPtr == getPtr nxt) (error "No video input device found.")
+        return nxt
+
+foreign import ccall "avformat_alloc_context"
+    avformat_alloc_context :: IO (Ptr ())
+
+mallocAVFormatContext :: IO AVFormatContext
+mallocAVFormatContext = AVFormatContext <$> avformat_alloc_context
 
 newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 
@@ -98,6 +132,27 @@ newtype AVOutputFormat = AVOutputFormat (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVOutputFormat, FormatFlags, flags
 #hasField AVOutputFormat, VideoCodecID, video_codec
 
+newtype AVInputFormat = AVInputFormat (Ptr ()) deriving (Storable, HasPtr)
+newtype AVClass = AVClass (Ptr ()) deriving (Storable, HasPtr)
+#mkField AVClass, AVClass
+#hasField AVInputFormat, AVClass, priv_class
+
+getAVCategory :: AVInputFormat -> IO Category
+getAVCategory aif =
+  do c <- getAVClass aif
+     if nullPtr == getPtr c
+        then return (Category (-1))
+        else Category <$> peek ((#ptr AVClass, category) $ castPtr $ getPtr c)
+
+newtype Category = Category CInt deriving (Eq,Ord,Show,Read,Enum)
+#enum Category, Category, AV_CLASS_CATEGORY_NA, AV_CLASS_CATEGORY_INPUT,\
+        AV_CLASS_CATEGORY_OUTPUT, AV_CLASS_CATEGORY_MUXER, AV_CLASS_CATEGORY_DEMUXER,\
+        AV_CLASS_CATEGORY_ENCODER, AV_CLASS_CATEGORY_DECODER, AV_CLASS_CATEGORY_FILTER,\
+        AV_CLASS_CATEGORY_BITSTREAM_FILTER, AV_CLASS_CATEGORY_SWSCALER, AV_CLASS_CATEGORY_SWRESAMPLER,\
+        AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT, AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT, AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,\
+        AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT, AV_CLASS_CATEGORY_DEVICE_OUTPUT, AV_CLASS_CATEGORY_DEVICE_INPUT,\
+        AV_CLASS_CATEGORY_NB
+
 newtype AVIOContext = AVIOContext (Ptr ()) deriving (Storable, HasPtr)
 
 newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
@@ -159,3 +214,9 @@ instance Storable AVFrac where
   poke ptr (AVFrac v n d) = do (#poke AVFrac, val) ptr v
                                (#poke AVFrac, num) ptr n
                                (#poke AVFrac, den) ptr d
+
+-- | The input source can be a file or a camera.  When using 'Camera',
+-- frequently in the form @Camera "0:0"@, the first input video device
+-- enumerated by libavdevice is selected.
+data InputSource = File FilePath | Camera String
+            deriving (Eq, Ord, Show, Read)

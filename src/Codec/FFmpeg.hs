@@ -18,11 +18,12 @@ import Codec.FFmpeg.Juicy
 import Codec.FFmpeg.Types
 
 foreign import ccall "av_register_all" av_register_all :: IO ()
+foreign import ccall "avdevice_register_all" avdevice_register_all :: IO ()
 
 -- foreign import ccall "avcodec_register_all" avcodec_register_all :: IO ()
 
 -- | Initialize FFmpeg by registering all known codecs. This /must/
 -- be called before using other FFmpeg functions.
 initFFmpeg :: IO ()
-initFFmpeg = av_register_all
+initFFmpeg = av_register_all >> avdevice_register_all
 
