@@ -7,7 +7,7 @@ import System.Environment
 
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
-firstFrame = do (getFrame, cleanup) <- imageReader "myVideo.mov"
+firstFrame = do (getFrame, cleanup) <- imageReader (File "myVideo.mov")
                 (fmap ImageRGB8 <$> getFrame) <* cleanup
 
 -- | Generate a video that pulses from light to dark.
@@ -37,7 +37,7 @@ testEncode = initFFmpeg >> pulseVid >> putStrLn "All done!"
 testDecode :: FilePath -> IO ()
 testDecode vidFile = 
   do initFFmpeg
-     (getFrame, cleanup) <- imageReaderTime vidFile
+     (getFrame, cleanup) <- imageReaderTime (File vidFile)
      frame1 <- getFrame
      case frame1 of
        Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
