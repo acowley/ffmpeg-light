@@ -2,8 +2,10 @@ import Codec.FFmpeg
 import Codec.Picture
 import Control.Applicative
 import Control.Monad (replicateM_)
+import qualified Data.Time.Clock as C
 import qualified Data.Vector.Storable as V
 import System.Environment
+import Control.Monad (unless)
 
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
@@ -52,10 +54,39 @@ testDecode vidFile =
      cleanup
      putStrLn "All done!"
 
+-- | @loopFor timeSpan action@ repeats @action@ until at least @timeSpan@
+-- seconds have elapsed.
+loopFor :: Double -> IO () -> IO ()
+loopFor time m =
+  do start <- C.getCurrentTime
+     let go = do m
+                 now <- C.getCurrentTime
+                 unless (realToFrac (C.diffUTCTime now start) >= time) go
+     go
+
+testCamera :: IO ()
+testCamera =
+  do initFFmpeg
+     (getFrame, cleanup) <- imageReader (Camera "0:0")
+     frame1 <- getFrame
+     case frame1 of
+       img@(Just (Image w h _)) ->
+         do let [w',h'] = map fromIntegral [w,h]
+            writeFrame <- imageWriter (defaultParams w' h') "camera.mov"
+            writeFrame (img :: Maybe (Image PixelRGB8))
+            let go = getFrame >>= writeFrame
+            loopFor 10 go
+            writeFrame Nothing
+       _ -> putStrLn "Couldn't read the first frame from the camera"
+     cleanup
+
 main :: IO ()
 main = do args <- getArgs
           case args of
             [] -> testEncode
+            [s]
+              | s `elem` ["--help", "-help", "-h"] -> error usage 
+              | s == "cam" -> testCamera
             [vidFile] -> testDecode vidFile
             _ -> error usage
   where usage = 
