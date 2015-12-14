@@ -104,7 +104,7 @@ juicyPixelStride _ =
 imageReaderT :: forall m p.
                 (Functor m, MonadIO m, MonadError String m,
                  JuicyPixelFormat p)
-             => FilePath -> m (IO (Maybe (Image p)), IO ())
+             => InputSource -> m (IO (Maybe (Image p)), IO ())
 imageReaderT = fmap (first (runMaybeT . aux toJuicyImage))
             . frameReader (juicyPixelFormat ([] :: [p]))
   where aux g x = MaybeT x >>= MaybeT . g
@@ -112,7 +112,7 @@ imageReaderT = fmap (first (runMaybeT . aux toJuicyImage))
 -- | Read frames from a video stream. Errors are thrown as
 -- 'IOException's.
 imageReader :: JuicyPixelFormat p
-            => FilePath -> IO (IO (Maybe (Image p)), IO ())
+            => InputSource -> IO (IO (Maybe (Image p)), IO ())
 imageReader = (>>= either error return) . runExceptT . imageReaderT
 
 -- | Read time stamped frames from a video stream. Time is given in
@@ -120,7 +120,7 @@ imageReader = (>>= either error return) . runExceptT . imageReaderT
 imageReaderTimeT :: forall m p.
                     (Functor m, MonadIO m, MonadError String m,
                      JuicyPixelFormat p)
-                 => FilePath -> m (IO (Maybe (Image p, Double)), IO ())
+                 => InputSource -> m (IO (Maybe (Image p, Double)), IO ())
 imageReaderTimeT = fmap (first (runMaybeT . aux toJuicyImage))
                  . frameReaderTime (juicyPixelFormat ([] :: [p]))
   where aux g x = do (f,t) <- MaybeT x
@@ -131,7 +131,7 @@ imageReaderTimeT = fmap (first (runMaybeT . aux toJuicyImage))
 -- seconds from the start of the stream. Errors are thrown as
 -- 'IOException's.
 imageReaderTime :: JuicyPixelFormat p
-                => FilePath -> IO (IO (Maybe (Image p, Double)), IO ())
+                => InputSource -> IO (IO (Maybe (Image p, Double)), IO ())
 imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 
 -- | Open a target file for writing a video stream. When the returned

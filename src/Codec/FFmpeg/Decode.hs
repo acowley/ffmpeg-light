@@ -25,7 +25,7 @@ import Foreign.Storable
 
 foreign import ccall "avformat_open_input" 
   avformat_open_input :: Ptr AVFormatContext -> CString -> Ptr ()
-                      -> Ptr (Ptr ()) -> IO CInt
+                      -> Ptr AVDictionary -> IO CInt
 
 foreign import ccall "avformat_find_stream_info" 
   avformat_find_stream_info :: AVFormatContext -> Ptr () -> IO CInt
@@ -58,11 +58,46 @@ foreign import ccall "avcodec_decode_video2"
 foreign import ccall "avformat_close_input"
   close_input :: Ptr AVFormatContext -> IO ()
 
+foreign import ccall "av_dict_set"
+  av_dict_set :: Ptr AVDictionary -> CString -> CString -> CInt -> IO CInt
+
+dictSet :: Ptr AVDictionary -> String -> String -> IO ()
+dictSet d k v = do
+  r <- withCString k $ \k' -> withCString v $ \v' ->
+         av_dict_set d k' v' 0
+  when (r < 0)
+       (error $ "av_dict_set failed("++show r++"): "++k++" => "++v)
+
 -- * FFmpeg Decoding Interface
 
+-- | Open the first video input device enumerated by FFMPEG.
+openCamera :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
+openCamera cam =
+  wrapIOError . alloca $ \ctx ->
+    withCString cam $ \cstr ->
+      do avPtr <- mallocAVFormatContext
+         setupCamera avPtr cam
+         poke ctx avPtr
+         r <- alloca $ \dict -> do
+                dictSet dict "framerate" "30"
+                avformat_open_input ctx cstr nullPtr dict
+         when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
+         peek ctx
+  where
+    setupCamera :: AVFormatContext -> String -> IO ()
+    setupCamera avfc c = do
+        setCamera avfc
+        setFilename avfc c
+
+openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
+openInput ipt =
+  case ipt of
+    File fileName -> openFile fileName
+    Camera cam    -> openCamera cam
+
 -- | Open an input media file.
-openInput :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
-openInput filename = 
+openFile :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
+openFile filename = 
   wrapIOError . alloca $ \ctx ->
     withCString filename $ \cstr ->
       do poke (castPtr ctx) nullPtr
@@ -132,9 +167,9 @@ read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
 
 -- | Read frames of the given 'AVPixelFormat' from a video stream.
 frameReader :: (MonadIO m, MonadError String m)
-            => AVPixelFormat -> FilePath -> m (IO (Maybe AVFrame), IO ())
-frameReader dstFmt fileName =
-  do inputContext <- openInput fileName
+            => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO ())
+frameReader dstFmt ipt =
+  do inputContext <- openInput ipt
      checkStreams inputContext
      (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
      _ <- openCodec ctx cod
@@ -144,17 +179,17 @@ frameReader dstFmt fileName =
 -- 
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderT :: (Functor m, MonadIO m, MonadError String m)
-             => FilePath -> m (MaybeT IO AVFrame, IO ())
+             => InputSource -> m (MaybeT IO AVFrame, IO ())
 frameReaderT = fmap (first MaybeT) . frameReader avPixFmtRgb24
 
 -- | Read time stamped frames of the given 'AVPixelFormat' from a
 -- video stream. Time is given in seconds from the start of the
 -- stream.
 frameReaderTime :: (MonadIO m, MonadError String m)
-                => AVPixelFormat -> FilePath
+                => AVPixelFormat -> InputSource
                 -> m (IO (Maybe (AVFrame, Double)), IO ())
-frameReaderTime dstFmt fileName =
-  do inputContext <- openInput fileName
+frameReaderTime dstFmt src =
+  do inputContext <- openInput src
      checkStreams inputContext
      (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
      _ <- openCodec ctx cod
@@ -176,7 +211,7 @@ frameReaderTime dstFmt fileName =
 -- 
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
-                 => FilePath -> m (MaybeT IO (AVFrame, Double), IO ())
+                 => InputSource -> m (MaybeT IO (AVFrame, Double), IO ())
 frameReaderTimeT = fmap (first MaybeT) . frameReaderTime avPixFmtRgb24
 
 -- | Construct an action that gets the next available frame, and an

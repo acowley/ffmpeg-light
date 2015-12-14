@@ -49,7 +49,7 @@ newtype AvFormat m a = AvFormat { unAvFormat :: ReaderT AVFormatContext m a }
 
 withAvFile :: (MonadMask m, MonadIO m) => String -> AvFormat m a -> m a
 withAvFile fn f = do
-    ectx <- runEitherT $ openInput fn
+    ectx <- runEitherT $ openFile fn
     case ectx of
         Left e    -> liftIO $ fail e
         Right ctx -> finally
