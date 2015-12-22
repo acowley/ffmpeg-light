@@ -1,15 +1,19 @@
-0.8.2
----
+# 0.9.0
+
+* Add support for camera input (Thomas M. DuBuisson)
+  * Try it: build the demo executable (`cabal configure -fBuildDemo`)
+    and run `cabal run demo -- cam` to record 10s of video from a
+    connected camera.
+
+# 0.8.2
 
 * Added probe features
 
-0.8.1
----
+# 0.8.1
 
 * Update raster demo to use new JuicyPixels-3.2 API
 
-0.8
----
+# 0.8
 
 * Update to transformers-0.4.1 and mtl-2.2.1
   * Changed decode-related types to accomodate deprecation of the
@@ -30,8 +34,7 @@
 * Rasterific bump
   * Rasterific exports its own linear algebra types as of 0.3
 
-0.7.1
----
+# 0.7.1
 
 * Bumped transformers dependency
 
@@ -43,26 +46,22 @@
 
 * Added BGRA pixel format
 
-0.7
----
+# 0.7
 
 * Simplified top-level API to focus on JuicyPixels-based interface
 
-0.6
----
+# 0.6
 
 * Cleaned the API of detritus. Use the image* functions.
 
-0.5
----
+# 0.5
 
 * Juiced the Encode and Decode APIs.
 
   Using `imageWriter` and `imageReader` provides a degree of pixel
   format polymorphism based on JuicyPixels pixel types.
 
-0.4
----
+# 0.4
 
 * Fixed corrupted output of palettized animated GIFs.
 
@@ -79,20 +78,17 @@
 
     * See the `demo/Raster.hs` for examples.
 
-0.3.1
----
+# 0.3.1
 
 * Automatically palettize RGB24 to RGB8 for GIF output.
 
 * Add a Rasterific demo program that records an animation.
 
-0.3
----
+# 0.3
 
 * Support for GIF encoding (and other palletized formats).
 
-0.2
----
+# 0.2
 
 * Separate `Scaler` module and friendly `libswscaler` interface.
 
@@ -100,7 +96,6 @@
 
 * Added demo program.
 
-0.1
----
+# 0.1
 
 * Basic h264 encoding and decoding.
