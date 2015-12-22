@@ -5,6 +5,9 @@
     and run `cabal run demo -- cam` to record 10s of video from a
     connected camera.
 
+* Extract frame time stamps from the video stream rather than the
+  codec context
+
 # 0.8.2
 
 * Added probe features

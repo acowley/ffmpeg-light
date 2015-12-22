@@ -129,7 +129,8 @@ checkStreams ctx =
 -- found, returns the index of the stream in the container, and its
 -- associated 'AVCodecContext' and 'AVCodec'.
 findVideoStream :: (MonadIO m, MonadError String m)
-                => AVFormatContext -> m (CInt, AVCodecContext, AVCodec)
+                => AVFormatContext
+                -> m (CInt, AVCodecContext, AVCodec, AVStream)
 findVideoStream fmt = do
   wrapIOError . alloca $ \codec -> do
       poke codec (AVCodec nullPtr)
@@ -139,7 +140,7 @@ findVideoStream fmt = do
       streams <- getStreams fmt
       vidStream <- peek (advancePtr streams (fromIntegral i))
       ctx <- getCodecContext vidStream
-      return (i, ctx, cod)
+      return (i, ctx, cod, vidStream)
 
 -- | Find a registered decoder with a codec ID matching that found in
 -- the given 'AVCodecContext'.
@@ -171,7 +172,7 @@ frameReader :: (MonadIO m, MonadError String m)
 frameReader dstFmt ipt =
   do inputContext <- openInput ipt
      checkStreams inputContext
-     (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
+     (vidStreamIndex, ctx, cod, _vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
      prepareReader inputContext vidStreamIndex dstFmt ctx
 
@@ -191,10 +192,10 @@ frameReaderTime :: (MonadIO m, MonadError String m)
 frameReaderTime dstFmt src =
   do inputContext <- openInput src
      checkStreams inputContext
-     (vidStreamIndex, ctx, cod) <- findVideoStream inputContext
+     (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
      (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
-     AVRational num den <- liftIO $ getTimeBase ctx
+     AVRational num den <- liftIO $ getTimeBase vidStream
      let (numl, dend) = (fromIntegral num, fromIntegral den)
          frameTime' frame = 
            do n <- getPts frame
