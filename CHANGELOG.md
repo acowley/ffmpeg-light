@@ -3,10 +3,10 @@
 * Add support for camera input (Thomas M. DuBuisson)
   * Try it: build the demo executable (`cabal configure -fBuildDemo`)
     and run `cabal run demo -- cam` to record 10s of video from a
-    connected camera.
+    connected camera to an output file `camera.mov`.
 
 * Extract frame time stamps from the video stream rather than the
-  codec context
+  codec context (hat tip to Jaro Reinders)
 
 # 0.8.2
 
