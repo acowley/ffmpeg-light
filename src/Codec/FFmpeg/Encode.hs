@@ -327,6 +327,11 @@ frameWriter ep fname = do
   avio_open_check oc fname
   write_header_check oc
 
+  -- Frame number ioref. We use this to determine whether we should
+  -- increment the frame PTS; we only want to do this for frames after
+  -- the first one since we want the first frame PTS to be zero.
+  frameNum <- newIORef (0::Int)
+
   let framePeriod = AVRational 1 (fromIntegral $ epFps ep)
 
   -- The stream time_base can be changed by the call to
@@ -365,13 +370,29 @@ frameWriter ep fname = do
 
       scaleToDst sws' img = void $ swsScale sws' img dstFrame
       fillDst = maybe copyDstData scaleToDst
+
+      -- | Gets the PTS to be used for the current frame by reading the
+      -- PTS from dstFrame. If the current frame is the first frame
+      -- (zero), the existing timestamp is left unmodified. Otherwise it
+      -- is incremented by frameTime.
+      --
+      -- This also increments the current frame number stored in the
+      -- frameNum IORef so the caller needn't worry about it.
+      getCurrentFrameTimestamp = do
+           curFrame <- readIORef frameNum
+           ts <- case curFrame == 0 of
+               True -> getPts dstFrame
+               False -> (+ frameTime) <$> getPts dstFrame
+           modifyIORef frameNum (+1)
+           return ts
+
       addRaw Nothing = return ()
       addRaw (Just (_, _, pixels)) =
         do resetPacket
            getPacketFlags pkt >>= setPacketFlags pkt . (.|. avPktFlagKey)
            --setSize pkt (fromIntegral $ V.length pixels)
            setSize pkt (fromIntegral pictureSize)
-           timeStamp <- (+ frameTime) <$> getPts dstFrame
+           timeStamp <- getCurrentFrameTimestamp
            setPts dstFrame timeStamp
            setPts pkt timeStamp
            -- getPts dstFrame >>= setDts pkt
@@ -394,7 +415,8 @@ frameWriter ep fname = do
                      writeIORef sPtr s'
                      return s'
            fillDst sws' (srcFmt, V2 srcW srcH, pixels')
-           getPts dstFrame >>= setPts dstFrame . (+ frameTime)
+           timeStamp <- getCurrentFrameTimestamp
+           setPts dstFrame timeStamp
            encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
            -- Make sure the GC hasn't clobbered our palettized pixel data
            let (fp,_,_) = V.unsafeToForeignPtr pixels'
