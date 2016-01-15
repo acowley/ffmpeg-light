@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface, FlexibleContexts #-}
+{-# LANGUAGE ForeignFunctionInterface, FlexibleContexts, RecordWildCards #-}
 -- | Video decoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
@@ -9,7 +9,7 @@ import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Control.Applicative
 import Control.Arrow (first)
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
@@ -71,29 +71,38 @@ dictSet d k v = do
 -- * FFmpeg Decoding Interface
 
 -- | Open the first video input device enumerated by FFMPEG.
-openCamera :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
-openCamera cam =
+openCamera :: (MonadIO m, MonadError String m) => String -> CameraConfig -> m AVFormatContext
+openCamera cam cfg =
   wrapIOError . alloca $ \ctx ->
     withCString cam $ \cstr ->
       do avPtr <- mallocAVFormatContext
          setupCamera avPtr cam
          poke ctx avPtr
          r <- alloca $ \dict -> do
-                dictSet dict "framerate" "30"
+                setConfig dict cfg
                 avformat_open_input ctx cstr nullPtr dict
          when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
          peek ctx
   where
+    run :: (a -> IO b) -> Maybe a -> IO ()
+    run _ Nothing  = return ()
+    run f (Just x) = void (f x)
+
+    setConfig :: Ptr AVDictionary -> CameraConfig -> IO ()
+    setConfig dict (CameraConfig {..}) =
+      do run (dictSet dict "framerate" . show) framerate
+         run (\(w,h) -> dictSet dict "video_size" (show w ++ "x" ++ show h)) resolution
+
     setupCamera :: AVFormatContext -> String -> IO ()
-    setupCamera avfc c = do
-        setCamera avfc
-        setFilename avfc c
+    setupCamera avfc c =
+      do setCamera avfc
+         setFilename avfc c
 
 openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
 openInput ipt =
   case ipt of
     File fileName -> openFile fileName
-    Camera cam    -> openCamera cam
+    Camera cam cf -> openCamera cam cf
 
 -- | Open an input media file.
 openFile :: (MonadIO m, MonadError String m) => String -> m AVFormatContext

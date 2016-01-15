@@ -67,7 +67,7 @@ loopFor time m =
 testCamera :: IO ()
 testCamera =
   do initFFmpeg
-     (getFrame, cleanup) <- imageReader (Camera "0:0")
+     (getFrame, cleanup) <- imageReader (Camera "0:0" defaultCameraConfig)
      frame1 <- getFrame
      case frame1 of
        img@(Just (Image w h _)) ->

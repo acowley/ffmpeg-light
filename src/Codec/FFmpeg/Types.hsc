@@ -216,7 +216,16 @@ instance Storable AVFrac where
                                (#poke AVFrac, den) ptr d
 
 -- | The input source can be a file or a camera.  When using 'Camera',
--- frequently in the form @Camera "0:0"@, the first input video device
+-- frequently in the form @Camera "0:0" defaultCameraConfig@, the first input video device
 -- enumerated by libavdevice is selected.
-data InputSource = File FilePath | Camera String
+data InputSource = File FilePath | Camera String CameraConfig
             deriving (Eq, Ord, Show, Read)
+
+data CameraConfig =
+  CameraConfig { framerate  :: Maybe Int
+               , resolution :: Maybe (Int,Int)
+               }
+          deriving (Eq,Ord,Show,Read)
+
+defaultCameraConfig :: CameraConfig
+defaultCameraConfig = CameraConfig (Just 30) Nothing
