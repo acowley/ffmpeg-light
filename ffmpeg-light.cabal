@@ -23,6 +23,8 @@ license-file:        LICENSE
 author:              Anthony Cowley
 maintainer:          acowley@gmail.com
 copyright:           Copyright (C) 2014 Anthony Cowley
+homepage:            http://github.com/acowley/ffmpeg-light
+bug-reports:         http://github.com/acowley/ffmpeg-light/issues
 category:            Codec
 build-type:          Simple
 extra-source-files:  src/hscMacros.h, src/nameCompat.h, CHANGELOG.md
