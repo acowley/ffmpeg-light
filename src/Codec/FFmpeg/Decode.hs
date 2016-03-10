@@ -23,11 +23,11 @@ import Foreign.Storable
 
 -- * FFI Declarations
 
-foreign import ccall "avformat_open_input" 
+foreign import ccall "avformat_open_input"
   avformat_open_input :: Ptr AVFormatContext -> CString -> Ptr ()
                       -> Ptr AVDictionary -> IO CInt
 
-foreign import ccall "avformat_find_stream_info" 
+foreign import ccall "avformat_find_stream_info"
   avformat_find_stream_info :: AVFormatContext -> Ptr () -> IO CInt
 
 foreign import ccall "av_find_best_stream"
@@ -39,9 +39,6 @@ foreign import ccall "avcodec_find_decoder"
 
 foreign import ccall "avcodec_find_decoder_by_name"
   avcodec_find_decoder_by_name :: CString -> IO AVCodec
-
-foreign import ccall "avcodec_get_frame_defaults"
-  avcodec_get_frame_defaults :: AVFrame -> IO ()
 
 foreign import ccall "avpicture_get_size"
   avpicture_get_size :: AVPixelFormat -> CInt -> CInt -> IO CInt
@@ -106,7 +103,7 @@ openInput ipt =
 
 -- | Open an input media file.
 openFile :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
-openFile filename = 
+openFile filename =
   wrapIOError . alloca $ \ctx ->
     withCString filename $ \cstr ->
       do poke (castPtr ctx) nullPtr
@@ -121,7 +118,7 @@ frameAsPicture = AVPicture . getPtr
 
 -- | Find a codec given by name.
 findDecoder :: (MonadIO m, MonadError String m) => String -> m AVCodec
-findDecoder name = 
+findDecoder name =
   do r <- liftIO $ withCString name avcodec_find_decoder_by_name
      when (getPtr r == nullPtr)
           (throwError $ "Unsupported codec: " ++ show name)
@@ -130,7 +127,7 @@ findDecoder name =
 -- | Read packets of a media file to get stream information. This is
 -- useful for file formats with no headers such as MPEG.
 checkStreams :: (MonadIO m, MonadError String m) => AVFormatContext -> m ()
-checkStreams ctx = 
+checkStreams ctx =
   do r <- liftIO $ avformat_find_stream_info ctx nullPtr
      when (r < 0) (throwError "Couldn't find stream information")
 
@@ -163,7 +160,7 @@ getDecoder ctx = do p <- liftIO $ getCodecID ctx >>= avcodec_find_decoder
 -- 'AVCodec'. **NOTE**: This function is not thread safe!
 openCodec :: (MonadIO m, MonadError String m)
           => AVCodecContext -> AVCodec -> m AVDictionary
-openCodec ctx cod = 
+openCodec ctx cod =
   wrapIOError . alloca $ \dict -> do
     poke dict (AVDictionary nullPtr)
     r <- open_codec ctx cod dict
@@ -186,7 +183,7 @@ frameReader dstFmt ipt =
      prepareReader inputContext vidStreamIndex dstFmt ctx
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
--- 
+--
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderT :: (Functor m, MonadIO m, MonadError String m)
              => InputSource -> m (MaybeT IO AVFrame, IO ())
@@ -206,7 +203,7 @@ frameReaderTime dstFmt src =
      (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
      AVRational num den <- liftIO $ getTimeBase vidStream
      let (numl, dend) = (fromIntegral num, fromIntegral den)
-         frameTime' frame = 
+         frameTime' frame =
            do n <- getPts frame
               return $ fromIntegral (n * numl) / dend
          readTS = do frame <- reader
@@ -218,7 +215,7 @@ frameReaderTime dstFmt src =
 
 -- | Read time stamped RGB frames with the result in the 'MaybeT'
 -- transformer.
--- 
+--
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
                  => InputSource -> m (MaybeT IO (AVFrame, Double), IO ())
