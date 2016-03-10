@@ -6,13 +6,13 @@
 
 module Codec.FFmpeg.Probe (
     -- * Files
-    withAvFile, nbStreams, formatName, formatMetadata,
+    withAvFile, nbStreams, formatName, formatMetadata, duration,
 
     -- * Streams
     AvStreamT, withStream, codecContext, codecName,
     codecMediaTypeName, streamBitrate, streamMetadata,
     codec,
-    
+
     -- * Dictionaries
     dictFoldM_
     ) where
@@ -21,6 +21,7 @@ import Control.Applicative ( Applicative )
 import Control.Monad.Catch ( MonadMask, finally )
 import Control.Monad.Reader
 import Control.Monad.Trans.Either
+import Data.Int ( Int64 )
 import Foreign.C.String ( CString, peekCString, withCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Utils ( with )
@@ -65,6 +66,9 @@ formatName = ask >>= \ctx -> liftIO $
     (#peek AVFormatContext, iformat) (getPtr ctx) >>=
     (#peek AVInputFormat, name) >>=
     peekCString
+
+duration :: MonadIO m => AvFormat m Int64
+duration = ask >>= \ctx -> liftIO $ (#peek AVFormatContext, duration) (getPtr ctx)
 
 formatMetadata :: MonadIO m => AvFormat m AVDictionary
 formatMetadata = ask >>= liftIO . (#peek AVFormatContext, metadata) . getPtr
@@ -163,4 +167,3 @@ foreign import ccall "avcodec_get_name"
 
 foreign import ccall "av_dict_get"
   av_dict_get :: AVDictionary -> CString -> Ptr () -> CInt -> IO (Ptr ())
-  
