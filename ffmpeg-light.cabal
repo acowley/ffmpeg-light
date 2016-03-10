@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.10.0
+version:             0.11.0
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -27,7 +27,7 @@ homepage:            http://github.com/acowley/ffmpeg-light
 bug-reports:         http://github.com/acowley/ffmpeg-light/issues
 category:            Codec
 build-type:          Simple
-extra-source-files:  src/hscMacros.h, src/nameCompat.h, CHANGELOG.md
+extra-source-files:  src/hscMacros.h, CHANGELOG.md
 cabal-version:       >=1.10
 
 source-repository head

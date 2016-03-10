@@ -11,14 +11,6 @@ import Foreign.Storable (Storable)
 #include <libavutil/mathematics.h>
 #include <libswscale/swscale.h>
 
-#ifndef PIX_FMT_RGBA64
--- WARNING: Fragile! This pixel format is not defined in older
--- versions. Note that many FFI calls will fail at runtime with older
--- versions, so all this does is let us the haskell code.
-#warning "This version of libav/ffmpeg is too old. It is not likely to work."
-#include "nameCompat.h"
-#endif
-
 newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 #enum AVMediaType,AVMediaType \
  , AVMEDIA_TYPE_VIDEO\

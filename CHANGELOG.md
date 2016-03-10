@@ -1,3 +1,7 @@
+# 0.11.0
+
+* Query stream duration (Matthias Treydte)
+
 # 0.10. 0
 
 * Fix encoder bug that created a single black frame at the start of
