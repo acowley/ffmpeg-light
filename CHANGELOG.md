@@ -1,3 +1,8 @@
+# 0.10. 0
+
+* Fix encoder bug that created a single black frame at the start of
+  every video (Jonathan Daugherty)
+
 # 0.9.0
 
 * Add support for camera input (Thomas M. DuBuisson)
