@@ -15,8 +15,7 @@ description:         Stream frames from an encoded video, or stream frames to
                      > go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
                      >         (fmap ImageRGB8 <$> getFrame) <* cleanup
                      .
-                     Tested on OS X 10.11.2 with <http://www.ffmpeg.org FFmpeg> 2.8.3
-                     installed via <http://brew.sh homebrew>.
+                     Tested with FFmpeg 2.7 - 3.0
 
 license:             BSD3
 license-file:        LICENSE
