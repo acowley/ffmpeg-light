@@ -11,7 +11,7 @@ module Codec.FFmpeg.Probe (
     -- * Streams
     AvStreamT, withStream, codecContext, codecName,
     codecMediaTypeName, streamBitrate, streamMetadata,
-    codec,
+    codec, streamImageSize,
 
     -- * Dictionaries
     dictFoldM_
@@ -119,6 +119,13 @@ codecName cctx = liftIO $ getCodecID cctx >>= avcodec_get_name >>= peekCString
 
 streamBitrate :: MonadIO m => AVCodecContext -> AvStreamT m Int
 streamBitrate cctx = liftIO $ getBitRate cctx >>= return . fromIntegral
+
+-- |
+-- Gives the (width, height) of a video stream in pixels, not accounting for the pixel aspect ratio.
+streamImageSize :: MonadIO m => AVCodecContext -> AvStreamT m (Int, Int)
+streamImageSize cctx = liftIO $ (,)
+    <$> liftM fromIntegral (getWidth cctx)
+    <*> liftM fromIntegral (getHeight cctx)
 
 streamMetadata :: MonadIO m => AvStreamT m AVDictionary
 streamMetadata = ask >>= liftIO . (#peek AVStream, metadata) . getPtr
