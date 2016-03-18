@@ -212,3 +212,16 @@ newtype PacketFlag = PacketFlag CInt deriving (Eq, Bits, Storable)
 #enum PacketFlag, PacketFlag \
  , AV_PKT_FLAG_KEY\
  , AV_PKT_FLAG_CORRUPT
+
+newtype LogLevel = LogLevel CInt deriving (Eq, Bits, Storable)
+#enum LogLevel, LogLevel \
+ , AV_LOG_QUIET\
+ , AV_LOG_PANIC\
+ , AV_LOG_FATAL\
+ , AV_LOG_ERROR\
+ , AV_LOG_WARNING\
+ , AV_LOG_INFO\
+ , AV_LOG_VERBOSE\
+ , AV_LOG_DEBUG\
+ , AV_LOG_TRACE\
+ , AV_LOG_MAX_OFFSET

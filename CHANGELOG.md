@@ -1,6 +1,8 @@
 # 0.11.0
 
 * Query stream duration (Matthias Treydte)
+* Initial support for verbosity control; defaults to quiet
+   * Can be changed with the new `setLogLevel` function
 
 # 0.10. 0
 
