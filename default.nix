@@ -5,8 +5,7 @@ mkDerivation {
   pname = "ffmpeg-light";
   version = "0.11.0";
   src = builtins.filterSource (path: type:
-    type != "directory" || (let bn = baseNameOf path;
-      in bn == "src" || bn == "demo"));
+    type != "directory" || (baseNameOf path != "dist")) ./.;
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
