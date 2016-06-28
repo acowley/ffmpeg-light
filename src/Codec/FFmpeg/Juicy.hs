@@ -11,10 +11,9 @@ import Codec.FFmpeg.Types
 import Control.Applicative
 import Control.Arrow (first, (&&&))
 import Control.Monad ((>=>))
-import Control.Monad.Error.Class
+import Control.Monad.Except
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.Except (runExceptT)
 import Control.Monad.Trans.Maybe
 import Data.Foldable (traverse_)
 import qualified Data.Vector.Storable as V
@@ -26,7 +25,7 @@ import Foreign.Storable (sizeOf)
 
 -- | Convert an 'AVFrame' to a 'DynamicImage' with the result in the
 -- 'MaybeT' transformer.
--- 
+--
 -- > toJuicyT = MaybeT . toJuicy
 toJuicyT :: AVFrame -> MaybeT IO DynamicImage
 toJuicyT = MaybeT . toJuicy
@@ -97,7 +96,7 @@ instance JuicyPixelFormat PixelRGBA8 where
 
 -- | Bytes-per-pixel for a JuicyPixels 'Pixel' type.
 juicyPixelStride :: forall a proxy. Pixel a => proxy a -> Int
-juicyPixelStride _ = 
+juicyPixelStride _ =
   sizeOf (undefined :: PixelBaseComponent a) * componentCount (undefined :: a)
 
 -- | Read frames from a video stream.
@@ -138,7 +137,7 @@ imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 -- function is applied to 'Nothing', the output stream is closed. Note
 -- that 'Nothing' /must/ be provided when finishing in order to
 -- properly terminate video encoding.
--- 
+--
 -- Support for source images that are of a different size to the
 -- output resolution is limited to non-palettized destination formats
 -- (i.e. those that are handled by @libswscaler@). Practically, this

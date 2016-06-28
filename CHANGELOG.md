@@ -1,3 +1,7 @@
+# 0.11.1
+
+* Use `Control.Monad.Except` instead of the deprecated `Control.Monad.Error` (Issue reported by Alexander / @AleXoundOS)
+
 # 0.11.0
 
 * Query stream duration (Matthias Treydte)
