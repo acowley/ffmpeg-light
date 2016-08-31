@@ -155,7 +155,7 @@ initStream ep oc = do
   ctx <- getCodecContext st
   setWidth ctx (epWidth ep)
   setHeight ctx (epHeight ep)
-  -- setTimeBase ctx framePeriod
+  setTimeBase ctx framePeriod
   setPixelFormat ctx $ case epPixelFormat ep of
                          Just fmt -> fmt
                          Nothing
