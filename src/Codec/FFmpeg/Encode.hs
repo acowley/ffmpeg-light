@@ -2,7 +2,7 @@
 -- | Video encoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
--- 
+--
 -- Note: If you need to import this module, consider qualifying the
 -- import.
 module Codec.FFmpeg.Encode where
@@ -97,7 +97,7 @@ foreign import ccall "av_image_fill_linesizes"
 -- * FFmpeg Encoding Interface
 
 -- | Minimal parameters describing the desired video output.
-data EncodingParams = 
+data EncodingParams =
   EncodingParams { epWidth  :: CInt
                  , epHeight :: CInt
                  , epFps    :: Int
@@ -164,9 +164,9 @@ initStream ep oc = do
                            | otherwise -> avPixFmtYuv420p
 
   -- Some formats want stream headers to be separate
-  needsHeader <- checkFlag avfmtGlobalheader <$> 
+  needsHeader <- checkFlag avfmtGlobalheader <$>
                  (getOutputFormat oc >>= getFormatFlags)
-  when needsHeader $ 
+  when needsHeader $
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
 
   -- _ <- withCString "vprofile" $ \kStr ->
@@ -206,7 +206,7 @@ initTempFrame ep fmt = do
 allocOutputContext :: FilePath -> IO AVFormatContext
 allocOutputContext fname = do
   oc <- alloca $ \ocTmp -> do
-          r <- withCString fname $ \fname' -> 
+          r <- withCString fname $ \fname' ->
                  avformat_alloc_output_context
                    ocTmp (AVOutputFormat nullPtr)
                    nullPtr fname'
@@ -282,7 +282,7 @@ palettizeRGB8 ep = \pix -> V.create $
 -- result is packed such that the BGRA palette is laid out
 -- contiguously following the palettized image data.
 palettizeJuicy :: EncodingParams -> V.Vector CUChar -> V.Vector CUChar
-palettizeJuicy ep pix = 
+palettizeJuicy ep pix =
   let (pix', pal) = palettize (PaletteOptions MedianMeanCut doDither 256)
                               (mkImage $ V.unsafeCast pix)
       pal' = V.map (\(V3 r g b) -> V4 b g r (255::CUChar))
@@ -296,7 +296,7 @@ palettizeJuicy ep pix =
 -- format, resolution, and pixel data). If this function is applied to
 -- 'Nothing', then the output stream is closed. Note that 'Nothing'
 -- /must/ be provided to properly terminate video encoding.
--- 
+--
 -- Support for source images that are of a different size to the
 -- output resolution is limited to non-palettized destination formats
 -- (i.e. those that are handled by @libswscaler@). Practically, this
