@@ -61,10 +61,17 @@ foreign import ccall "av_image_copy_to_buffer"
 -- Returns line size alignment. It a width of frame as parameter.
 lineSizeAlign :: CInt -> CInt
 lineSizeAlign width
-  -- Greater cases are 128 and 256 which are multiple of 32.
+  -- Alignment for 256 bit register.
   | width `mod` 32 == 0 = 32
+  -- Alignment for 128 bit register.
   | width `mod` 16 == 0 = 16
+  -- Alignment for 64 bit register.
   | width `mod` 8  == 0 = 8
+  -- Alignment for 32 bit register.
+  | width `mod` 4  == 0 = 8
+  -- Alignment for 16 bit register.
+  | width `mod` 2  == 0 = 8
+  -- Alignment for 8 bit register.
   | otherwise           = 1
   
   
