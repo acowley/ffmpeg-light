@@ -29,7 +29,7 @@ foreign import ccall "av_image_get_buffer_size"
     -> CInt
     -- Height.
     -> CInt
-    -- Linesize alignment.
+    -- Line size alignment.
     -> CInt
     -- Size of buffer.
     -> IO CInt
@@ -52,32 +52,32 @@ foreign import ccall "av_image_copy_to_buffer"
     -> CInt
     -- Source image height.
     -> CInt
-    -- Line size alignment of source image.
+    -- Line size alignment of destination image.
     -> CInt
     -- Number of bytes written to destination.
     -> IO CInt
 
 
--- Returns line size alignment. It a width of frame as parameter.
+-- Returns line size alignment.
 lineSizeAlign :: CInt -> CInt
-lineSizeAlign width
+lineSizeAlign lineSize
   -- Alignment for 256 bit register.
-  | width `mod` 32 == 0 = 32
+  | lineSize `mod` 32 == 0 = 32
   -- Alignment for 128 bit register.
-  | width `mod` 16 == 0 = 16
+  | lineSize `mod` 16 == 0 = 16
   -- Alignment for 64 bit register.
-  | width `mod` 8  == 0 = 8
+  | lineSize `mod` 8  == 0 = 8
   -- Alignment for 32 bit register.
-  | width `mod` 4  == 0 = 8
+  | lineSize `mod` 4  == 0 = 4
   -- Alignment for 16 bit register.
-  | width `mod` 2  == 0 = 8
+  | lineSize `mod` 2  == 0 = 2
   -- Alignment for 8 bit register.
   | otherwise           = 1
   
   
 -- Wrapper for av_image_get_buffer_size.
-frameBufferSize :: AVFrame -> IO CInt
-frameBufferSize frame =
+frameBufferSize :: AVFrame -> CInt -> IO CInt
+frameBufferSize frame dstLineSize =
   do
     
     -- Frame pixel format.
@@ -86,9 +86,9 @@ frameBufferSize frame =
     -- Get width and height of frame.
     width  <- getWidth  frame
     height <- getHeight frame
-    
-    -- Alignment of line size.
-    let alignment = lineSizeAlign width
+
+    -- Alignment of destination line size.
+    let alignment = lineSizeAlign dstLineSize
     
     -- Supply everything above to av_image_get_buffer_size. 
     av_image_get_buffer_size
@@ -100,12 +100,12 @@ frameBufferSize frame =
       
 -- Wrapper for av_image_copy_to_buffer. It is assumed that size
 -- of destination buffer is equal to (frameBufferSize givenFrame).
-frameCopyToBuffer :: AVFrame -> Ptr CUChar -> IO CInt
-frameCopyToBuffer frame buffer =
+frameCopyToBuffer :: AVFrame -> CInt -> Ptr CUChar -> IO CInt
+frameCopyToBuffer frame dstLineSize buffer =
   do
     
     -- Destination buffer size.
-    bufferSize <- frameBufferSize frame
+    bufferSize <- frameBufferSize frame dstLineSize
     -- Source image data.
     let imageData = hasData frame
     -- Source image line size.
@@ -117,7 +117,7 @@ frameCopyToBuffer frame buffer =
     -- Source image height.
     height <- getHeight frame
     -- Line size alignment.
-    let alignment = lineSizeAlign width
+    let alignment = lineSizeAlign dstLineSize
     
     -- Supply everything above to av_image_copy_to_buffer.
     av_image_copy_to_buffer
@@ -142,12 +142,12 @@ frameCopyToBuffer frame buffer =
    
    I'm not sure about using unsafePerformIO here.
 -}
-copyImage :: AVFrame -> IO ByteString
-copyImage frame =
+copyImage :: AVFrame -> CInt -> IO ByteString
+copyImage frame dstLineSize =
   do
     
     -- Get required size of buffer to hold image data.
-    imageBufSize <- frameBufferSize frame
+    imageBufSize <- frameBufferSize frame dstLineSize
                          
     -- Allocate buffer to hold image data.
     imageBuf <- av_malloc $ fromIntegral imageBufSize
@@ -156,7 +156,7 @@ copyImage frame =
     let imageBufCleanup = av_free imageBuf
     
     -- Copy image to buffer.
-    _ <- frameCopyToBuffer frame (castPtr imageBuf)
+    _ <- frameCopyToBuffer frame dstLineSize (castPtr imageBuf)
     
     -- Fill up byte-string image by data from buffer.
     image <- unsafePackCStringFinalizer
@@ -166,3 +166,4 @@ copyImage frame =
                imageBufCleanup
                
     return image
+
