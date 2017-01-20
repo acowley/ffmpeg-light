@@ -35,22 +35,25 @@ toJuicyT = MaybeT . toJuicy
 -- | Convert an 'AVFrame' to a 'DynamicImage'.
 toJuicy :: AVFrame -> IO (Maybe DynamicImage)
 toJuicy frame = runMaybeT $ do
-  
-  bufSize <- fromIntegral <$> frameBufferSizeT frame
-  
-  v <- MaybeT $ do
-        
-        v <- VM.new bufSize
-        
-        VM.unsafeWith v (frameCopyToBuffer frame)
-          >>= return . maybe Nothing (const (Just v))
-          
+
+  v' <- do
+
+          bufSize <- fromIntegral <$> frameBufferSizeT frame
+               
+          v <- MaybeT $ do
+
+                 v <- VM.new bufSize
+
+                 VM.unsafeWith v (frameCopyToBuffer frame)
+                   >>= return . maybe Nothing (const (Just v))
+
+          lift $ V.unsafeFreeze v
+
   MaybeT $ do
   
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
     
-    v' <- V.unsafeFreeze v
     let mkImage :: V.Storable (PixelBaseComponent a)
                 => (Image a -> DynamicImage) -> Maybe DynamicImage
         mkImage c = Just $ c (Image w h (V.unsafeCast v'))
@@ -70,21 +73,25 @@ toJuicyImage frame = runMaybeT $ do
   fmt <- lift $ getPixelFormat frame
   guard (fmt == juicyPixelFormat ([] :: [p]))
 
-  bufSize <- fromIntegral <$> frameBufferSizeT frame
-  
-  v <- MaybeT $ do
-        
-        v <- VM.new bufSize
-        
-        VM.unsafeWith v (frameCopyToBuffer frame)
-          >>= return . maybe Nothing (const (Just v))
+  v' <- do
+
+          bufSize <- fromIntegral <$> frameBufferSizeT frame
+               
+          v <- MaybeT $ do
+
+                 v <- VM.new bufSize
+
+                 VM.unsafeWith v (frameCopyToBuffer frame)
+                   >>= return . maybe Nothing (const (Just v))
+
+          lift $ V.unsafeFreeze v
           
   MaybeT $ do
     
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
     
-    Just . Image w h . V.unsafeCast <$> V.unsafeFreeze v
+    Just . Image w h . V.unsafeCast <$> return v'
 
 
 -- | Save an 'AVFrame' to a PNG file on disk assuming the frame could
