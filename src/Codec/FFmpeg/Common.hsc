@@ -48,6 +48,43 @@ foreign import ccall "sws_scale"
             -> Ptr (Ptr CUChar) -> Ptr CInt -> CInt -> CInt
             -> Ptr (Ptr CUChar) -> Ptr CInt -> IO CInt
 
+-- Returns a required size of buffer to hold image data.
+foreign import ccall "av_image_get_buffer_size"
+  av_image_get_buffer_size
+    -- Desired pixel format.
+    :: AVPixelFormat
+    -- Width.
+    -> CInt
+    -- Height.
+    -> CInt
+    -- Line size alignment.
+    -> CInt
+    -- Size of buffer.
+    -> IO CInt
+    
+-- Fills up a buffer by image data.
+foreign import ccall "av_image_copy_to_buffer"
+  av_image_copy_to_buffer
+    -- Destination buffer.
+    :: Ptr CUChar
+    -- Destination buffer size.
+    -> CInt
+    -- Source image data.
+    -> Ptr (Ptr CUChar)
+    -- Source image line size.
+    -> Ptr CInt
+    -- Source image pixel format.
+    -> AVPixelFormat
+    -- Source image width.
+    -> CInt
+    -- Source image height.
+    -> CInt
+    -- Line size alignment of destination image.
+    -> CInt
+    -- Number of bytes written to destination.
+    -> IO CInt
+    
+    
 -- * Utility functions
 
 -- | Catch an IOException from an IO action and re-throw it in a
@@ -86,43 +123,7 @@ avPixelStride fmt
   | otherwise = Nothing
   
   
--- Returns a required size of buffer to hold image data.
-foreign import ccall "av_image_get_buffer_size"
-  av_image_get_buffer_size
-    -- Desired pixel format.
-    :: AVPixelFormat
-    -- Width.
-    -> CInt
-    -- Height.
-    -> CInt
-    -- Line size alignment.
-    -> CInt
-    -- Size of buffer.
-    -> IO CInt
-    
-    
--- Fills up a buffer by image data.
-foreign import ccall "av_image_copy_to_buffer"
-  av_image_copy_to_buffer
-    -- Destination buffer.
-    :: Ptr CUChar
-    -- Destination buffer size.
-    -> CInt
-    -- Source image data.
-    -> Ptr (Ptr CUChar)
-    -- Source image line size.
-    -> Ptr CInt
-    -- Source image pixel format.
-    -> AVPixelFormat
-    -- Source image width.
-    -> CInt
-    -- Source image height.
-    -> CInt
-    -- Line size alignment of destination image.
-    -> CInt
-    -- Number of bytes written to destination.
-    -> IO CInt
-
+-- * Wrappers for copying 'AVFrame's data to buffer.
 
 -- Returns line size alignment.
 lineSizeAlign :: CInt -> CInt
