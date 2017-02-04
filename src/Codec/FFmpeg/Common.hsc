@@ -7,7 +7,6 @@ import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Foreign.C.Types
 import Foreign.Ptr
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.Maybe
 
 foreign import ccall "avcodec_open2"
@@ -158,8 +157,8 @@ frameAlignT frame =
       avPixelStride fmt >>=
         return . lineSizeAlign . (*w) . fromIntegral
         
-      
--- Wrapper for av_image_get_buffer_size.
+        
+-- | Return the size in bytes of the amount of data stored in 'AVFrame'.
 frameBufferSize :: AVFrame -> IO (Maybe CInt)
 frameBufferSize frame =
   runMaybeT $ do
@@ -170,13 +169,16 @@ frameBufferSize frame =
       h   <- getHeight frame
       Just <$> av_image_get_buffer_size fmt w h a
 
--- Transformer version of frameBufferSize.
+
+-- | Transformer version of 'frameBufferSize'.
 frameBufferSizeT :: AVFrame -> MaybeT IO CInt
 frameBufferSizeT = MaybeT . frameBufferSize
 
-      
--- Wrapper for av_image_copy_to_buffer. It is assumed that size
--- of destination buffer is equal to (frameBufferSize givenFrame).
+
+-- | Copy image data from 'AVFrame' into a buffer.      
+-- It is assumed that size of buffer is equal to
+--
+-- > bufSize <- fromJust <$> frameBufferSize frame.
 frameCopyToBuffer :: AVFrame -> Ptr CUChar -> IO (Maybe CInt)
 frameCopyToBuffer frame buffer =
   runMaybeT $ do
@@ -203,7 +205,8 @@ frameCopyToBuffer frame buffer =
           w
           h
           a
+          
 
--- Transformer version of frameCopyToBuffer.
+-- | Transformer version of 'frameCopyToBuffer'.
 frameCopyToBufferT :: AVFrame -> Ptr CUChar -> MaybeT IO CInt
 frameCopyToBufferT frame = MaybeT . frameCopyToBuffer frame
