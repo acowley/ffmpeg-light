@@ -101,7 +101,7 @@ executable raster
 executable vplay
   if !flag(BuildVPlayDemo)
     buildable:       False
-  build-depends:     base < 5, mtl, transformers, text
+  build-depends:     base < 5, mtl, transformers, text, monad-loops, bytestring
   if flag(BuildVPlayDemo)
     build-depends:   ffmpeg-light, sdl2
   hs-source-dirs:    demo

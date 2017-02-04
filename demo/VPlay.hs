@@ -2,15 +2,20 @@
 module Main where
 
 import Codec.FFmpeg
-import Codec.FFmpeg.Decode
+import Codec.FFmpeg.Common
+import Codec.FFmpeg.Decode (frameReaderTime)
 
 import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
 import Control.Monad.Except
+import Control.Monad.Loops
 import Control.Monad.Trans.Maybe
 
+import Data.ByteString (ByteString)
+import Data.ByteString.Unsafe (unsafePackCStringFinalizer)
 import Data.Text (Text)
 
 import Foreign.C.Types
+import Foreign.Ptr
 
 import qualified SDL as SDL
 
@@ -102,6 +107,43 @@ nothingOnQuit action =
             _             -> False)) action
             
          
+{- Returns a byte-string containing an image data.
+   
+   Returned ByteString doesn't refer back to it's
+   source AVFrame. So, source frame may be deleted
+   or changed, but image will stay.
+   
+   Returned ByteString may be used to fill up SDL's
+   textures (using SDL.updateTexture).
+   
+   I'm not sure about using unsafePerformIO here.
+-}
+copyImage :: AVFrame -> IO (Maybe ByteString)
+copyImage frame =
+  runMaybeT $ do
+    
+    -- Get required size of buffer to hold image data.
+    imageBufSize <- frameBufferSizeT frame
+                         
+    -- Allocate buffer to hold image data.
+    imageBuf <- MaybeT $
+       Just <$> (av_malloc $ fromIntegral imageBufSize)
+    
+    -- Image data buffer cleanup.
+    let imageBufCleanup = av_free imageBuf
+    
+    -- Copy image to buffer.
+    frameCopyToBufferT frame (castPtr imageBuf)
+    
+    -- Fill up byte-string by data from buffer.
+    MaybeT $ Just <$>
+      unsafePackCStringFinalizer
+        (castPtr imageBuf)
+        (fromIntegral imageBufSize)
+        -- Cleanup for buffer.
+        imageBufCleanup
+        
+         
 -- Configuration for video player.
 data Config =
   Config {
@@ -138,7 +180,10 @@ videoPlayer cfg src = do
   
   
   {- Render frames. -}
-  
+  liftIO $ whileJust_ getFrame $
+    \ (frame, time) -> do undefined
+      
+      
   
 
 
