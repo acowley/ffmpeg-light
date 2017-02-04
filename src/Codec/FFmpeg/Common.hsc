@@ -7,6 +7,8 @@ import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Foreign.C.Types
 import Foreign.Ptr
+import Control.Monad.Trans.Class
+import Control.Monad.Trans.Maybe
 
 foreign import ccall "avcodec_open2"
   open_codec :: AVCodecContext -> AVCodec -> Ptr AVDictionary -> IO CInt
@@ -83,3 +85,125 @@ avPixelStride fmt
   | fmt == avPixFmtRgb8   = Just 1
   | fmt == avPixFmtPal8   = Just 1
   | otherwise = Nothing
+  
+  
+-- Returns a required size of buffer to hold image data.
+foreign import ccall "av_image_get_buffer_size"
+  av_image_get_buffer_size
+    -- Desired pixel format.
+    :: AVPixelFormat
+    -- Width.
+    -> CInt
+    -- Height.
+    -> CInt
+    -- Line size alignment.
+    -> CInt
+    -- Size of buffer.
+    -> IO CInt
+    
+    
+-- Fills up a buffer by image data.
+foreign import ccall "av_image_copy_to_buffer"
+  av_image_copy_to_buffer
+    -- Destination buffer.
+    :: Ptr CUChar
+    -- Destination buffer size.
+    -> CInt
+    -- Source image data.
+    -> Ptr (Ptr CUChar)
+    -- Source image line size.
+    -> Ptr CInt
+    -- Source image pixel format.
+    -> AVPixelFormat
+    -- Source image width.
+    -> CInt
+    -- Source image height.
+    -> CInt
+    -- Line size alignment of destination image.
+    -> CInt
+    -- Number of bytes written to destination.
+    -> IO CInt
+
+
+-- Returns line size alignment.
+lineSizeAlign :: CInt -> CInt
+lineSizeAlign lineSize
+  -- Alignment for 512 bit register.
+  | lineSize `mod` 64 == 0 = 64
+  -- Alignment for 256 bit register.
+  | lineSize `mod` 32 == 0 = 32
+  -- Alignment for 128 bit register.
+  | lineSize `mod` 16 == 0 = 16
+  -- Alignment for 64 bit register.
+  | lineSize `mod` 8  == 0 = 8
+  -- Alignment for 32 bit register.
+  | lineSize `mod` 4  == 0 = 4
+  -- Alignment for 16 bit register.
+  | lineSize `mod` 2  == 0 = 2
+  -- Alignment for 8 bit register.
+  | otherwise = 1
+
+
+-- Returns frame's image alignment.
+frameAlign :: AVFrame -> IO (Maybe CInt)
+frameAlign = runMaybeT . frameAlignT
+
+-- Transformer version of frameAlign.
+frameAlignT :: AVFrame -> MaybeT IO CInt
+frameAlignT frame =
+  MaybeT $ do
+    fmt <- getPixelFormat frame
+    w   <- getWidth frame
+    return $
+      avPixelStride fmt >>=
+        return . lineSizeAlign . (*w) . fromIntegral
+        
+      
+-- Wrapper for av_image_get_buffer_size.
+frameBufferSize :: AVFrame -> IO (Maybe CInt)
+frameBufferSize frame =
+  runMaybeT $ do
+    a <- frameAlignT frame
+    MaybeT $ do
+      fmt <- getPixelFormat frame
+      w   <- getWidth frame
+      h   <- getHeight frame
+      Just <$> av_image_get_buffer_size fmt w h a
+
+-- Transformer version of frameBufferSize.
+frameBufferSizeT :: AVFrame -> MaybeT IO CInt
+frameBufferSizeT = MaybeT . frameBufferSize
+
+      
+-- Wrapper for av_image_copy_to_buffer. It is assumed that size
+-- of destination buffer is equal to (frameBufferSize givenFrame).
+frameCopyToBuffer :: AVFrame -> Ptr CUChar -> IO (Maybe CInt)
+frameCopyToBuffer frame buffer =
+  runMaybeT $ do
+  
+    a <- frameAlignT frame
+    s <- frameBufferSizeT frame
+    
+    MaybeT $ do
+        
+      let imageData = hasData frame
+          lineSize  = hasLineSize frame
+      
+      fmt <- getPixelFormat frame
+      w   <- getWidth frame
+      h   <- getHeight frame
+
+      Just <$>
+        av_image_copy_to_buffer
+          buffer
+          s
+          (castPtr imageData)
+          lineSize
+          fmt
+          w
+          h
+          a
+
+-- Transformer version of frameCopyToBuffer.
+frameCopyToBufferT :: AVFrame -> Ptr CUChar -> MaybeT IO CInt
+frameCopyToBufferT frame = MaybeT . frameCopyToBuffer frame

@@ -54,8 +54,7 @@ library
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,
-                       Codec.FFmpeg.Internal.Linear,
-                       Codec.FFmpeg.Buffer
+                       Codec.FFmpeg.Internal.Linear
   build-tools:         hsc2hs
   build-depends:       base >=4.6 && < 4.10,
                        either,

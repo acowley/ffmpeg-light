@@ -22,7 +22,6 @@ import Foreign.C.Types
 import Foreign.Marshal.Array (advancePtr, copyArray)
 import Foreign.Ptr (castPtr, Ptr)
 import Foreign.Storable (sizeOf)
-import Codec.FFmpeg.Buffer
 import Data.Maybe (maybe)
 
 -- | Convert an 'AVFrame' to a 'DynamicImage' with the result in the
