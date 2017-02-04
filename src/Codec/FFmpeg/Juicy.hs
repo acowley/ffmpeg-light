@@ -24,6 +24,28 @@ import Foreign.Ptr (castPtr, Ptr)
 import Foreign.Storable (sizeOf)
 import Data.Maybe (maybe)
 
+
+-- | Convert 'AVFrame' to a 'Vector'.
+frameToVector :: AVFrame -> IO (Maybe (V.Vector CUChar))
+frameToVector = runMaybeT . frameToVectorT
+
+
+-- | Convert 'AVFrame' to a 'Vector' with the result in the 'MaybeT' transformer.
+frameToVectorT :: AVFrame -> MaybeT IO (V.Vector CUChar)
+frameToVectorT frame = do
+
+  bufSize <- fromIntegral <$> frameBufferSizeT frame
+       
+  v <- MaybeT $ do
+
+         v <- VM.new bufSize
+
+         VM.unsafeWith v (frameCopyToBuffer frame)
+           >>= return . maybe Nothing (const (Just v))
+
+  lift $ V.unsafeFreeze v
+
+
 -- | Convert an 'AVFrame' to a 'DynamicImage' with the result in the
 -- 'MaybeT' transformer.
 --
@@ -31,22 +53,12 @@ import Data.Maybe (maybe)
 toJuicyT :: AVFrame -> MaybeT IO DynamicImage
 toJuicyT = MaybeT . toJuicy
 
+
 -- | Convert an 'AVFrame' to a 'DynamicImage'.
 toJuicy :: AVFrame -> IO (Maybe DynamicImage)
 toJuicy frame = runMaybeT $ do
 
-  v' <- do
-
-          bufSize <- fromIntegral <$> frameBufferSizeT frame
-               
-          v <- MaybeT $ do
-
-                 v <- VM.new bufSize
-
-                 VM.unsafeWith v (frameCopyToBuffer frame)
-                   >>= return . maybe Nothing (const (Just v))
-
-          lift $ V.unsafeFreeze v
+  v <- frameToVectorT frame
 
   MaybeT $ do
   
@@ -55,7 +67,7 @@ toJuicy frame = runMaybeT $ do
     
     let mkImage :: V.Storable (PixelBaseComponent a)
                 => (Image a -> DynamicImage) -> Maybe DynamicImage
-        mkImage c = Just $ c (Image w h (V.unsafeCast v'))
+        mkImage c = Just $ c (Image w h (V.unsafeCast v))
   
     fmt <- getPixelFormat frame
         
@@ -65,38 +77,27 @@ toJuicy frame = runMaybeT $ do
                  | fmt == avPixFmtGray16 -> mkImage ImageY16
                  | otherwise -> Nothing
 
+
 -- | Convert an 'AVFrame' to an 'Image'.
 toJuicyImage :: forall p. JuicyPixelFormat p => AVFrame -> IO (Maybe (Image p))
 toJuicyImage frame = runMaybeT $ do
   
   fmt <- lift $ getPixelFormat frame
   guard (fmt == juicyPixelFormat ([] :: [p]))
-
-  v' <- do
-
-          bufSize <- fromIntegral <$> frameBufferSizeT frame
-               
-          v <- MaybeT $ do
-
-                 v <- VM.new bufSize
-
-                 VM.unsafeWith v (frameCopyToBuffer frame)
-                   >>= return . maybe Nothing (const (Just v))
-
-          lift $ V.unsafeFreeze v
           
   MaybeT $ do
     
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
     
-    Just . Image w h . V.unsafeCast <$> return v'
+    fmap (Image w h . V.unsafeCast) <$> frameToVector frame
 
 
 -- | Save an 'AVFrame' to a PNG file on disk assuming the frame could
 -- be converted to a 'DynamicImage' using 'toJuicy'.
 saveJuicy :: FilePath -> AVFrame -> IO ()
 saveJuicy name = toJuicy >=> traverse_ (savePngImage name)
+
 
 -- | Mapping of @JuicyPixels@ pixel types to FFmpeg pixel formats.
 class Pixel a => JuicyPixelFormat a where
