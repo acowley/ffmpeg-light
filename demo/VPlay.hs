@@ -118,8 +118,8 @@ nothingOnQuit action =
    
    I'm not sure about using unsafePerformIO here.
 -}
-copyImage :: AVFrame -> IO (Maybe ByteString)
-copyImage frame =
+copyImageData :: AVFrame -> IO (Maybe ByteString)
+copyImageData frame =
   runMaybeT $ do
     
     -- Get required size of buffer to hold image data.
@@ -133,7 +133,7 @@ copyImage frame =
     let imageBufCleanup = av_free imageBuf
     
     -- Copy image to buffer.
-    frameCopyToBufferT frame (castPtr imageBuf)
+    _ <- frameCopyToBufferT frame (castPtr imageBuf)
     
     -- Fill up byte-string by data from buffer.
     MaybeT $ Just <$>
@@ -142,7 +142,34 @@ copyImage frame =
         (fromIntegral imageBufSize)
         -- Cleanup for buffer.
         imageBufCleanup
+
+-- Transformer version of copyImage.        
+copyImageDataT :: AVFrame -> MaybeT IO ByteString
+copyImageDataT = MaybeT . copyImageData
         
+
+-- Image.
+data Image =
+  Image {
+    imgWidth  :: CInt,
+    imgHeight :: CInt,
+    imgData   :: ByteString
+  }
+
+
+-- AVFrame to Image conversion.
+frameToImage :: AVFrame -> IO (Maybe Image)
+frameToImage = runMaybeT . frameToImageT 
+
+-- Transformer version of frameToImage.
+frameToImageT :: AVFrame -> MaybeT IO Image
+frameToImageT frame = MaybeT $ do
+  
+  w <- getWidth frame
+  h <- getHeight frame
+  
+  fmap (Image w h) <$> copyImageData frame
+         
          
 -- Configuration for video player.
 data Config =
@@ -176,11 +203,11 @@ videoPlayer cfg src = do
   liftIO $ initFFmpeg
   
   -- Open input source for reading frames.
-  (getFrame, cleanup) <- frameReader'
+  (getImage, cleanup) <- imageReader'
   
   
   {- Render frames. -}
-  liftIO $ whileJust_ getFrame $
+  liftIO $ whileJust_ (nothingOnQuit getImage) $
     \ (frame, time) -> do undefined
       
       
@@ -206,9 +233,19 @@ videoPlayer cfg src = do
     createWindow     = SDL.createWindow (cfgWindowName cfg) SDL.defaultWindow
     createRenderer w = SDL.createRenderer w (cfgDriver cfg) SDL.defaultRenderer
     
-    frameReader' = do
+    imageReader' = do
+    
       (getFrame, cleanup) <- frameReaderTimeDiff (cfgFmtFFmpeg cfg) src
-      return (nothingOnQuit getFrame, cleanup)
+      
+      let getImage = runMaybeT $ do
+            
+            (frame, time) <- MaybeT getFrame
+            
+            image <- frameToImageT frame
+            
+            return (image, time)
+       
+      return (getImage, cleanup)
     
      
 
