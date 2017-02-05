@@ -181,6 +181,10 @@ data Config =
     cfgFmtSDL     :: SDL.PixelFormat,
     cfgWindowName :: Text
   }
+  
+-- Converts floating point seconds to milliseconds.
+sec2msec :: (RealFrac a, Integral b) => a -> b
+sec2msec = floor . (*1000)
             
 videoPlayer
   :: (MonadIO m, MonadError String m)
@@ -210,12 +214,48 @@ videoPlayer cfg src = do
   
   {- Render frames. -}
   liftIO $ whileJust_ (nothingOnQuit getImage) $
-    \ (frame, time) -> do undefined
+    \ (image, time) -> do
+      
+      {- Rendering. -}
+      
+      -- Rendering start time.
+      rStartTime <- SDL.time
+      
+      -- Create texture from frame.
+      texture <- imageToTexture image renderer
+      
+      -- Copy texture to renderer.
+      SDL.copy
+        renderer
+        texture
+        -- Entire texture.
+        Nothing
+        -- Entire rendering target.
+        Nothing
+      
+      -- Present renderer using present.
+      SDL.present renderer
+      
+      -- Destroy texture.
+      SDL.destroyTexture texture
+                
+      -- Finish time of rendering.
+      rFinishTime <- SDL.time
       
       
-  
+      {- Synchronizing. -}
+      
+          -- Total rendering time.
+      let rTotalTime = sec2msec $ rFinishTime - rStartTime
+          -- Frame time in MS.
+          frameTime = sec2msec time
 
-
+      -- If rendering time is less then frame time.
+      when ( time > 0 && rTotalTime < frameTime) $
+        -- Sleep their difference.
+        SDL.delay $ frameTime - rTotalTime
+      
+      
   {- Cleanup. -}
     
   -- Cleanup after frame reading.
