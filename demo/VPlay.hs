@@ -23,6 +23,11 @@ import System.Environment
 import qualified SDL as SDL
 
 
+{- Video player example. -}
+
+
+{- Auxiliary functions. -}
+
 {- Wrapper for frameReaderTime which returns
    time difference between two adjecent frames.   
 -}
@@ -195,7 +200,8 @@ sec2msec :: (RealFrac a, Integral b) => a -> b
 sec2msec = floor . (*1000)
             
 
--- Main function.
+{- Main function. -}
+
 videoPlayer
   :: (MonadIO m, MonadError String m)
   => Config -> InputSource -> m ()
@@ -333,11 +339,11 @@ defaultConfig =
     cfgWindowName = "VPLay"
   }
   
--- Runs videoPLayer in Either monad.
+-- Runs videoPlayer in Either monad.
 runVideoPlayer :: Config -> FilePath -> IO (Either String ())
 runVideoPlayer cfg = runExceptT . videoPlayer cfg . File
 
 -- Video player with default configuration.
--- It expects a path to video as argument.
+-- Command line argument: path to video file.
 main :: IO ()
 main = getArgs >>= runVideoPlayer defaultConfig . head >> return ()
