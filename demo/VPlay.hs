@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import Codec.FFmpeg
@@ -16,6 +17,8 @@ import Data.Text (Text)
 
 import Foreign.C.Types
 import Foreign.Ptr
+
+import System.Environment
 
 import qualified SDL as SDL
 
@@ -166,12 +169,17 @@ frameToImage = runMaybeT . frameToImageT
 frameToImageT :: AVFrame -> MaybeT IO Image
 frameToImageT frame = MaybeT $ do
   
-  w <- getWidth frame
-  h <- getHeight frame
-  s <- getLineSize frame
+  w   <- getWidth frame
+  h   <- getHeight frame
+  fmt <- getPixelFormat frame
   
-  fmap (Image w h s) <$> copyImageData frame
-         
+  -- LineSize param is required for creating a texure.
+  -- Value returned by getLineSize produces errors.
+  -- That's why it is calculated here.
+  let makeImage = Image w h . (*w) . fromIntegral <$> avPixelStride fmt
+   
+  ((<*>) makeImage) <$> copyImageData frame
+
          
 -- Configuration for video player.
 data Config =
@@ -186,6 +194,8 @@ data Config =
 sec2msec :: (RealFrac a, Integral b) => a -> b
 sec2msec = floor . (*1000)
             
+
+-- Main function.
 videoPlayer
   :: (MonadIO m, MonadError String m)
   => Config -> InputSource -> m ()
@@ -309,8 +319,25 @@ videoPlayer cfg src = do
                     s
                     
       return texture'
-    
-     
 
+
+{- Main. -}
+
+-- Default configuration.
+defaultConfig :: Config
+defaultConfig =
+  Config {
+    cfgDriver     = (-1),
+    cfgFmtFFmpeg  = avPixFmtRgb24,
+    cfgFmtSDL     = SDL.RGB24,
+    cfgWindowName = "VPLay"
+  }
+  
+-- Runs videoPLayer in Either monad.
+runVideoPlayer :: Config -> FilePath -> IO (Either String ())
+runVideoPlayer cfg = runExceptT . videoPlayer cfg . File
+
+-- Video player with default configuration.
+-- It expects a path to video as argument.
 main :: IO ()
-main = return ()
+main = getArgs >>= runVideoPlayer defaultConfig . head >> return ()
