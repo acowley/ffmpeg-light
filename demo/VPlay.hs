@@ -151,9 +151,10 @@ copyImageDataT = MaybeT . copyImageData
 -- Image.
 data Image =
   Image {
-    imgWidth  :: CInt,
-    imgHeight :: CInt,
-    imgData   :: ByteString
+    imgWidth    :: CInt,
+    imgHeight   :: CInt,
+    imgLineSize :: CInt,
+    imgData     :: ByteString
   }
 
 
@@ -167,8 +168,9 @@ frameToImageT frame = MaybeT $ do
   
   w <- getWidth frame
   h <- getHeight frame
+  s <- getLineSize frame
   
-  fmap (Image w h) <$> copyImageData frame
+  fmap (Image w h s) <$> copyImageData frame
          
          
 -- Configuration for video player.
@@ -233,6 +235,7 @@ videoPlayer cfg src = do
     createWindow     = SDL.createWindow (cfgWindowName cfg) SDL.defaultWindow
     createRenderer w = SDL.createRenderer w (cfgDriver cfg) SDL.defaultRenderer
     
+    
     imageReader' = do
     
       (getFrame, cleanup) <- frameReaderTimeDiff (cfgFmtFFmpeg cfg) src
@@ -246,6 +249,26 @@ videoPlayer cfg src = do
             return (image, time)
        
       return (getImage, cleanup)
+      
+      
+    imageToTexture (Image w h s d) r = do
+      
+      -- Create empty texture.
+      texture <- SDL.createTexture
+                   r
+                   (cfgFmtSDL cfg)
+                   SDL.TextureAccessStatic
+                   $ SDL.V2 w h
+
+      -- Update texture by image from frame.
+      texture' <- SDL.updateTexture
+                    texture
+                    -- Entire texture.
+                    Nothing
+                    d
+                    s
+                    
+      return texture'
     
      
 
