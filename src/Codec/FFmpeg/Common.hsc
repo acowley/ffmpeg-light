@@ -144,19 +144,26 @@ lineSizeAlign lineSize
   | otherwise = 1
 
 
+-- | Retun 'AVFrame' line size.
+frameLineSize :: AVFrame -> IO (Maybe CInt)
+frameLineSize frame = do
+  w   <- getWidth frame
+  fmt <- getPixelFormat frame  
+  return $
+    (*w) . fromIntegral <$> avPixelStride fmt
+
+-- | Transformer version of 'frameLineSize'.
+frameLineSizeT :: AVFrame -> MaybeT IO CInt
+frameLineSizeT = MaybeT . frameLineSize 
+
+
 -- Returns frame's image alignment.
 frameAlign :: AVFrame -> IO (Maybe CInt)
-frameAlign = runMaybeT . frameAlignT
+frameAlign = fmap (fmap lineSizeAlign) . frameLineSize 
 
 -- Transformer version of frameAlign.
 frameAlignT :: AVFrame -> MaybeT IO CInt
-frameAlignT frame =
-  MaybeT $ do
-    fmt <- getPixelFormat frame
-    w   <- getWidth frame
-    return $
-      avPixelStride fmt >>=
-        return . lineSizeAlign . (*w) . fromIntegral
+frameAlignT = MaybeT . frameAlign 
         
         
 -- | Return the size in bytes of the amount of data stored in 'AVFrame'.

@@ -166,24 +166,22 @@ data Image =
   }
 
 
--- AVFrame to Image conversion.
-frameToImage :: AVFrame -> IO (Maybe Image)
-frameToImage = runMaybeT . frameToImageT 
-
 -- Transformer version of frameToImage.
 frameToImageT :: AVFrame -> MaybeT IO Image
-frameToImageT frame = MaybeT $ do
+frameToImageT = MaybeT . frameToImage 
+
+-- AVFrame to Image conversion.
+frameToImage :: AVFrame -> IO (Maybe Image)
+frameToImage frame = runMaybeT $ do
   
-  w   <- getWidth frame
-  h   <- getHeight frame
-  fmt <- getPixelFormat frame
-  
-  -- LineSize param is required for creating a texure.
-  -- Value returned by getLineSize produces errors.
-  -- That's why it is calculated here.
-  let makeImage = Image w h . (*w) . fromIntegral <$> avPixelStride fmt
-   
-  ((<*>) makeImage) <$> copyImageData frame
+  s <- frameLineSizeT frame
+
+  MaybeT $ do
+    
+    w   <- getWidth frame
+    h   <- getHeight frame
+     
+    fmap (Image w h s) <$> copyImageData frame
 
          
 -- Configuration for video player.
