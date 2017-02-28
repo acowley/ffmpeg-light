@@ -6,7 +6,7 @@ import Codec.FFmpeg
 import Codec.FFmpeg.Common
 import Codec.FFmpeg.Decode hiding (av_malloc)
 
-import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
+import Control.Concurrent.MVar (MVar, newMVar, takeMVar, putMVar)
 import Control.Monad.Except
 import Control.Monad.Loops
 import Control.Monad.Trans.Maybe
@@ -21,6 +21,8 @@ import Foreign.Ptr
 
 import System.Environment
 
+import Control.Arrow
+
 import qualified SDL as SDL
 
 
@@ -30,11 +32,100 @@ import qualified SDL as SDL
 {- Auxiliary functions. -}
 
 
-{- Wrapper for monads which returns Nothing when:
+-- Prepare input source: open, check for streams.
+prepareInput :: (MonadIO m, MonadError String m)
+             => InputSource
+             -> m AVFormatContext
+prepareInput inp =
+  openInput inp >>= \ ctx -> checkStreams ctx >> return ctx
 
-     1. Monad action returns Nothing. 
-     2. When condition holds.
--}
+-- Prepare video codec: find video stream, open.
+prepareVideoCodec :: (MonadIO m, MonadError String m)
+                  => AVFormatContext
+                  -> m ( CInt
+                       , AVCodecContext
+                       , AVCodec
+                       , AVStream
+                       , AVDictionary )
+prepareVideoCodec inpCtx = do
+  (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inpCtx
+  dict <- openCodec ctx cod
+  return (vidStreamIndex, ctx, cod, vidStream, dict)
+
+
+-- Transform reader to return timestamp too. 
+readTS :: (HasPts f, Fractional t)
+       => AVRational
+       -> IO (Maybe f)
+       -> IO (Maybe (f, t))
+readTS (AVRational num den) reader =
+  -- It's part of frameReaderTime definition.
+  let (numl, dend) = (fromIntegral num, fromIntegral den)
+      frameTime' frame =
+        do n <- getPts frame
+           return $ fromIntegral (n * numl) / dend
+      reader' = do frame <- reader
+                   case frame of
+                     Nothing -> return Nothing
+                     Just f -> do t <- frameTime' f
+                                  return $ Just (f, t) in reader'
+                                  
+
+-- Transform frame and timestamp reader to compute frame
+-- time as a difference between adjacent timestamps. 
+readTSDiff :: (MonadIO m, MonadIO m', Num t)
+           => m' (Maybe (f, t)) -> m (m' (Maybe (f, t)))
+readTSDiff readerTS = do
+  timeVar <- liftIO $ newMVar 0
+  let reader = runMaybeT $ do
+                 (f, currTime) <- MaybeT readerTS
+                 prevTime <- takeTime
+                 putTime currTime
+                 let timeDiff = currTime - prevTime
+                 return (f, timeDiff)
+                 where
+                   takeTime = liftIO . takeMVar $ timeVar
+                   putTime  = liftIO . putMVar timeVar
+  return reader
+  
+
+-- Transformer version of updateTextureByFrame.
+updateTextureByFrameT :: SDL.Texture -> AVFrame -> MaybeT IO SDL.Texture
+updateTextureByFrameT texture frame =
+  copyImageDataT frame >>= updateTexture texture
+  where
+    updateTexture texture img =
+      frameLineSizeT frame >>=
+        SDL.updateTexture texture Nothing img 
+    
+-- Update texture by image data from frame.
+updateTextureByFrame :: SDL.Texture -> AVFrame -> IO (Maybe SDL.Texture)
+updateTextureByFrame t = runMaybeT . updateTextureByFrameT t
+
+
+-- Transform frame and time readers frames into textures.
+readToTexture :: Num t
+              => SDL.Texture
+              -> IO (Maybe (AVFrame, t)) 
+              -> IO (Maybe (SDL.Texture, t))
+readToTexture texture reader =
+  runMaybeT $ do
+    (f, t) <- MaybeT reader
+    updateTextureByFrameT texture f
+      >>= return . flip (,) t
+
+-- Transform reader to convert frames to textures and return frame time.
+readToTextureWithTSDiff :: (MonadIO m, Fractional t)
+                        => AVRational
+                        -> SDL.Texture
+                        -> IO (Maybe AVFrame)
+                        -> m (IO (Maybe (SDL.Texture, t)))
+readToTextureWithTSDiff timeBase texture reader =
+  readTSDiff (readTS timeBase reader)
+    >>= return . readToTexture texture
+
+
+-- Return Nothing when condition holds.
 nothingWhen
   :: Monad m
   => m a -> (a -> Bool) -> m (Maybe b) -> m (Maybe b)
@@ -49,12 +140,7 @@ nothingWhen g p action = do
     else action
       
 
-{- Wrapper for IO action which returns Nothing when:
-
-    1. Action by itself returns Nothing.
-    2. If QuitEvent was received.
-
--}
+-- Retrun Nothing when QuitEvent is received.
 nothingOnQuit
   :: MonadIO m
   => m (Maybe a) -> m (Maybe a)
@@ -68,13 +154,12 @@ nothingOnQuit action =
             _             -> False)) action
             
          
-{- Returns a byte-string containing an image data.
+{- Return ByteString filled by image data from frame.
    
    Returned ByteString doesn't refer back to it's
    source AVFrame. So, source frame may be deleted
    or changed, but image will stay.  
    
-   I'm not sure about using unsafePerformIO here.
 -}
 copyImageData :: AVFrame -> IO (Maybe ByteString)
 copyImageData frame =
@@ -82,7 +167,7 @@ copyImageData frame =
     
     -- Get required size of buffer to hold image data.
     imageBufSize <- frameBufferSizeT frame
-                         
+    
     -- Allocate buffer to hold image data.
     imageBuf <- MaybeT $
        Just <$> (av_malloc $ fromIntegral imageBufSize)
@@ -101,22 +186,22 @@ copyImageData frame =
         -- Cleanup for buffer.
         imageBufCleanup
 
--- Transformer version of copyImage.        
+-- Transformer version of copyImageData.        
 copyImageDataT :: AVFrame -> MaybeT IO ByteString
 copyImageDataT = MaybeT . copyImageData
         
          
 -- Configuration for video player.
 data Config =
-  Config {
-    cfgDriver     :: CInt,
-    cfgFmtFFmpeg  :: AVPixelFormat,
-    cfgFmtSDL     :: SDL.PixelFormat,
-    cfgWindowName :: Text
-  }
+  Config
+    { cfgWindowTitle    :: Text
+    , cfgRendererDriver :: CInt
+    , cfgFmtFFmpeg      :: AVPixelFormat
+    , cfgFmtSDL         :: SDL.PixelFormat
+    }
   
   
--- Converts floating point seconds to milliseconds.
+-- Convert floating point second to millisecond.
 sec2msec :: (RealFrac a, Integral b) => a -> b
 sec2msec = floor . (*1000)
             
@@ -128,30 +213,44 @@ videoPlayer
   => Config -> InputSource -> m ()
 videoPlayer cfg src = do
   
-  {- Setup SDL. -}
-
-  -- Initialize SDL.
-  SDL.initializeAll
   
-  -- Create window.
-  window <- createWindow
+  {- Open video. -}
   
-  -- Get renderer associated with window.
-  renderer <- createRenderer window
-
-
-  {- Setup texture reader. -}
-
-  -- Initialize FFmpeg.
   liftIO $ initFFmpeg
   
-  -- Open input source for reading textures.
-  (getTexture, cleanup) <- storeTimeDiff $ textureReaderTime renderer
+  inputContext <- prepareInput src
+  (vsIdx, ctx, cod, vs, _) <- prepareVideoCodec inputContext
+
+
+  {- Create window, renderer and texture. -}
   
+  SDL.initializeAll
+
+  w <- liftIO $ getWidth ctx
+  h <- liftIO $ getHeight ctx 
   
-  {- Render frames. -}
+  window <- createWindow w h
+  
+  renderer <- createRenderer window
+  
+  texture <- createTexture renderer w h
+               
+               
+  {- Create texture and time reader. -}
+  
+  let dstFmt = cfgFmtFFmpeg cfg
+  (reader, cleanup) <- prepareReader inputContext vsIdx dstFmt ctx
+  
+  timeBase <- liftIO $ getTimeBase vs
+  
+  getTexture <- readToTextureWithTSDiff timeBase texture reader
+                
+                
+  {- Render. -}
+  
   liftIO $ whileJust_ (nothingOnQuit getTexture) $
     \ (texture, time) -> do
+      
       
       {- Rendering. -}
       
@@ -180,7 +279,7 @@ videoPlayer cfg src = do
       let rTotalTime = sec2msec $ rFinishTime - rStartTime
           -- Frame time in MS.
           frameTime = sec2msec time
-
+         
       -- If rendering time is less then frame time.
       when ( time > 0 && rTotalTime < frameTime) $ do
         -- Sleep their difference.
@@ -191,6 +290,9 @@ videoPlayer cfg src = do
     
   -- Cleanup after frame reading.
   liftIO cleanup
+
+  -- Destroy texture.  
+  SDL.destroyTexture texture
   
   -- Destroy renderer.
   SDL.destroyRenderer renderer
@@ -199,120 +301,37 @@ videoPlayer cfg src = do
   SDL.destroyWindow window
   
   -- Quit SDL.
-  SDL.quit 
+  SDL.quit
   
   where
-  
-    createWindow     = SDL.createWindow (cfgWindowName cfg) SDL.defaultWindow
-    createRenderer w = SDL.createRenderer w (cfgDriver cfg) SDL.defaultRenderer
     
-    createTexture r w =
-      SDL.createTexture r (cfgFmtSDL cfg) SDL.TextureAccessStreaming . SDL.V2 w
-       
-       
-    {- Modified frameReaderTime: it produces textures. -}
-    textureReaderTime renderer =
-      do let dstFmt = cfgFmtFFmpeg cfg
-         
-         inputContext <- openInput src
-         checkStreams inputContext
-         (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
-         
-         -- Data needed for texture creation.
-         w <- liftIO $ getWidth ctx
-         h <- liftIO $ getHeight ctx
-         let std = avPixelStride dstFmt
-         when (not $ isJust std) $
-           throwError $ "Unsupported format: " ++ show dstFmt
-         let s = w * (fromIntegral . fromJust) std
-         
-         -- Texture which will be updated.
-         texture <- createTexture renderer w h
-         
-         _ <- openCodec ctx cod
-         (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
-         AVRational num den <- liftIO $ getTimeBase vidStream
-         let (numl, dend) = (fromIntegral num, fromIntegral den)
-             frameTime' frame =
-               do n <- getPts frame
-                  return $ fromIntegral (n * numl) / dend
-             readTS = do frame <- reader
-                         case frame of
-                           Nothing -> return Nothing
-                           Just f -> do t <- frameTime' f
-                                        return $ Just (f, t)
-                       
-             -- Texture reader.                               
-         let readTexture = runMaybeT $ do
-                             
-                             (f, t)   <- MaybeT readTS
-                             img      <- copyImageDataT f
-                             texture' <- liftIO $ updateTexture texture img
-                             
-                             return (texture', t)
-                             
-                             where
-                               updateTexture t img =
-                                 -- Update entire texture.
-                                 SDL.updateTexture t Nothing img s
-             
-             -- Texture cleanup.                
-             cleanup' = cleanup >> SDL.destroyTexture texture
-         
-         return (readTexture, cleanup')
-         
-         
-    {- Modify reader to return time difference
-       between current and previous frames.      -}
-    storeTimeDiff reader = do
+    createWindow w h = do
+      window <- SDL.createWindow (cfgWindowTitle cfg) SDL.defaultWindow
+      (SDL.$=) (SDL.windowSize window) (SDL.V2 w h)
+      return window
       
-      -- Get producer and cleanup.
-      (getNext, cleanup) <- reader
-      
-      -- Put zero time into variable.
-      prevTimeVar <- liftIO $ newMVar 0.0
-      
-      -- Wrapper for reader.
-      let getNext' = runMaybeT $ do
-      
-            -- Get next.
-            (next, currTime) <- MaybeT getNext
-          
-            -- Get time of previous.
-            prevTime <- prevTimeGet
-            
-            -- Set time of current.
-            prevTimeSet currTime
-                          
-            -- Compute time difference.
-            let timeDiff = currTime - prevTime
-            
-            -- Return next and difference.
-            return (next, timeDiff)
-            
-            where
-              
-              -- Getter for previous time.
-              prevTimeGet = liftIO $ takeMVar prevTimeVar
-              
-              -- Setter for previous time.
-              prevTimeSet = liftIO . putMVar prevTimeVar
-              
-      -- Return wrapper.
-      return (getNext', cleanup)
+    createRenderer window =
+      SDL.createRenderer window (cfgRendererDriver cfg) SDL.defaultRenderer
 
+    createTexture renderer w h =
+      SDL.createTexture
+        renderer
+        (cfgFmtSDL cfg)
+        SDL.TextureAccessStreaming
+        (SDL.V2 w h)
+        
 
 {- Main. -}
 
 -- Default configuration.
 defaultConfig :: Config
 defaultConfig =
-  Config {
-    cfgDriver     = (-1),
-    cfgFmtFFmpeg  = avPixFmtRgb24,
-    cfgFmtSDL     = SDL.RGB24,
-    cfgWindowName = "VPLay"
-  }
+  Config
+    { cfgWindowTitle    = "VPLay"
+    , cfgRendererDriver = (-1)
+    , cfgFmtFFmpeg  = avPixFmtRgb24
+    , cfgFmtSDL     = SDL.RGB24 
+    }
   
 -- Runs videoPlayer in Either monad.
 runVideoPlayer :: Config -> FilePath -> IO (Either String ())
