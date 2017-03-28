@@ -97,10 +97,8 @@ nothingWhen
   :: Monad m
   => m a -> (a -> Bool) -> m (Maybe b) -> m (Maybe b)
 nothingWhen g p action = do
-  
   -- Generate conditional.
   a <- g
-  
   -- Check predicate.
   if p a
     then return Nothing
@@ -132,7 +130,7 @@ copyImageData frame =
     
     -- Get required size of buffer to hold image data.
     imageBufSize <- frameBufferSizeT frame
-    
+   
     -- Allocate buffer to hold image data.
     imageBuf <- MaybeT $
        Just <$> (av_malloc $ fromIntegral imageBufSize)
@@ -158,6 +156,20 @@ copyImageDataT = MaybeT . copyImageData
 -- Convert floating point second to millisecond.
 sec2msec :: (RealFrac a, Integral b) => a -> b
 sec2msec = floor . (*1000)
+
+-- Adjust window size by display size.
+-- It uses first display retrieved from call to SDL.getDisplays.
+-- I don't know yet how to get a display where window is opened.
+-- So this function won't be used right now.
+adjustWindowSize :: MonadIO m => SDL.Window -> m ()
+adjustWindowSize w = do
+  (SDL.V2 ww wh) <- SDL.get (SDL.windowSize w)
+  (SDL.V2 dw dh) <- SDL.displayBoundsSize <$> firstDisplay
+  let w' = min ww dw
+      h' = min wh dh
+  (SDL.windowSize w) SDL.$= (SDL.V2 w' h')
+  where
+    firstDisplay = SDL.getDisplays >>= return . head
 
 
 {- Main. -}     
@@ -215,14 +227,17 @@ videoPlayer cfg src = do
   
   where
     
+    -- Create window using title from config.
     createWindow w h = do
       window <- SDL.createWindow (cfgWindowTitle cfg) SDL.defaultWindow
       (SDL.$=) (SDL.windowSize window) (SDL.V2 w h)
       return window
-      
+    
+    -- Create renderer using driver from config.
     createRenderer window =
       SDL.createRenderer window (cfgRendererDriver cfg) SDL.defaultRenderer
 
+    -- Create texture using pixel format from config.
     createTexture renderer w h =
       SDL.createTexture
         renderer
