@@ -1,3 +1,10 @@
+# 0.12.0
+
+* Refactoring to better interoperate with SDL2
+* SDL2 video player demo executable
+
+[Thanks to Vladimir Pankov!]
+
 # 0.11.1
 
 * Use `Control.Monad.Except` instead of the deprecated `Control.Monad.Error` (Issue reported by Alexander / @AleXoundOS)
