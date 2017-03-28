@@ -22,6 +22,29 @@ import Foreign.C.Types
 import Foreign.Marshal.Array (advancePtr, copyArray)
 import Foreign.Ptr (castPtr, Ptr)
 import Foreign.Storable (sizeOf)
+import Data.Maybe (maybe)
+
+
+-- | Convert 'AVFrame' to a 'Vector'.
+frameToVector :: AVFrame -> IO (Maybe (V.Vector CUChar))
+frameToVector = runMaybeT . frameToVectorT
+
+
+-- | Convert 'AVFrame' to a 'Vector' with the result in the 'MaybeT' transformer.
+frameToVectorT :: AVFrame -> MaybeT IO (V.Vector CUChar)
+frameToVectorT frame = do
+
+  bufSize <- fromIntegral <$> frameBufferSizeT frame
+       
+  v <- MaybeT $ do
+
+         v <- VM.new bufSize
+
+         VM.unsafeWith v (frameCopyToBuffer frame)
+           >>= return . maybe Nothing (const (Just v))
+
+  lift $ V.unsafeFreeze v
+
 
 -- | Convert an 'AVFrame' to a 'DynamicImage' with the result in the
 -- 'MaybeT' transformer.
@@ -30,56 +53,51 @@ import Foreign.Storable (sizeOf)
 toJuicyT :: AVFrame -> MaybeT IO DynamicImage
 toJuicyT = MaybeT . toJuicy
 
+
 -- | Convert an 'AVFrame' to a 'DynamicImage'.
 toJuicy :: AVFrame -> IO (Maybe DynamicImage)
 toJuicy frame = runMaybeT $ do
-  fmt <- lift $ getPixelFormat frame
-  pixelStride <- MaybeT . return $ avPixelStride fmt
+
+  v <- frameToVectorT frame
+
   MaybeT $ do
+  
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
-    pixels <- castPtr <$> getData frame :: IO (Ptr CUChar)
-    srcStride <- fromIntegral <$> getLineSize frame
-    let dstStride = w * pixelStride
-    v <- VM.new $ h * dstStride
-    VM.unsafeWith v $ \vptr ->
-      mapM_ (\(i,o) -> copyArray (advancePtr vptr o)
-                                 (advancePtr pixels i)
-                                 dstStride)
-            (map ((srcStride *) &&& (dstStride*)) [0 .. h - 1])
-    v' <- V.unsafeFreeze v
+    
     let mkImage :: V.Storable (PixelBaseComponent a)
                 => (Image a -> DynamicImage) -> Maybe DynamicImage
-        mkImage c = Just $ c (Image w h (V.unsafeCast v'))
+        mkImage c = Just $ c (Image w h (V.unsafeCast v))
+  
+    fmt <- getPixelFormat frame
+        
     return $ case () of
                _ | fmt == avPixFmtRgb24 -> mkImage ImageRGB8
                  | fmt == avPixFmtGray8 -> mkImage ImageY8
                  | fmt == avPixFmtGray16 -> mkImage ImageY16
                  | otherwise -> Nothing
 
+
 -- | Convert an 'AVFrame' to an 'Image'.
 toJuicyImage :: forall p. JuicyPixelFormat p => AVFrame -> IO (Maybe (Image p))
-toJuicyImage frame =
-  do fmt <- getPixelFormat frame
-     if fmt /= juicyPixelFormat ([] :: [p])
-     then return Nothing
-     else do w <- fromIntegral <$> getWidth frame
-             h <- fromIntegral <$> getHeight frame
-             pixels <- castPtr <$> getData frame :: IO (Ptr CUChar)
-             srcStride <- fromIntegral <$> getLineSize frame
-             let dstStride = w * juicyPixelStride ([]::[p])
-             v <- VM.new $ h * dstStride
-             VM.unsafeWith v $ \vptr ->
-               mapM_ (\(i,o) -> copyArray (advancePtr vptr o)
-                                          (advancePtr pixels i)
-                                          dstStride)
-                     (map ((srcStride *) &&& (dstStride*)) [0 .. h - 1])
-             Just . Image w h . V.unsafeCast <$> V.unsafeFreeze v
+toJuicyImage frame = runMaybeT $ do
+  
+  fmt <- lift $ getPixelFormat frame
+  guard (fmt == juicyPixelFormat ([] :: [p]))
+          
+  MaybeT $ do
+    
+    w <- fromIntegral <$> getWidth frame
+    h <- fromIntegral <$> getHeight frame
+    
+    fmap (Image w h . V.unsafeCast) <$> frameToVector frame
+
 
 -- | Save an 'AVFrame' to a PNG file on disk assuming the frame could
 -- be converted to a 'DynamicImage' using 'toJuicy'.
 saveJuicy :: FilePath -> AVFrame -> IO ()
 saveJuicy name = toJuicy >=> traverse_ (savePngImage name)
+
 
 -- | Mapping of @JuicyPixels@ pixel types to FFmpeg pixel formats.
 class Pixel a => JuicyPixelFormat a where
