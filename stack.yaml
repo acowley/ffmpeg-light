@@ -21,10 +21,9 @@ flags:
 extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
-system-ghc: true
 nix:
   enable: true
-  packages: [ ffmpeg-full, pkgconfig, zlib ]
+  packages: [ ffmpeg-full, pkgconfig, zlib, SDL2 ]
   pure: false
 
 # Extra directories used by stack for building
