@@ -48,10 +48,10 @@ foreign import ccall "sws_scale"
             -> Ptr (Ptr CUChar) -> Ptr CInt -> CInt -> CInt
             -> Ptr (Ptr CUChar) -> Ptr CInt -> IO CInt
 
--- Returns a required size of buffer to hold image data.
+-- Return size of buffer for image.
 foreign import ccall "av_image_get_buffer_size"
   av_image_get_buffer_size
-    -- Desired pixel format.
+    -- Pixel format.
     :: AVPixelFormat
     -- Width.
     -> CInt
@@ -62,7 +62,7 @@ foreign import ccall "av_image_get_buffer_size"
     -- Size of buffer.
     -> IO CInt
     
--- Fills up a buffer by image data.
+-- Copy image to buffer.
 foreign import ccall "av_image_copy_to_buffer"
   av_image_copy_to_buffer
     -- Destination buffer.
@@ -79,7 +79,7 @@ foreign import ccall "av_image_copy_to_buffer"
     -> CInt
     -- Source image height.
     -> CInt
-    -- Line size alignment of destination image.
+    -- Source image line size alignment.
     -> CInt
     -- Number of bytes written to destination.
     -> IO CInt
@@ -122,10 +122,7 @@ avPixelStride fmt
   | fmt == avPixFmtPal8   = Just 1
   | otherwise = Nothing
   
-  
--- * Wrappers for copying 'AVFrame's data to buffer.
-
--- Returns line size alignment.
+-- | Return line size alignment.
 lineSizeAlign :: CInt -> CInt
 lineSizeAlign lineSize
   -- Alignment for 512 bit register.
@@ -143,8 +140,7 @@ lineSizeAlign lineSize
   -- Alignment for 8 bit register.
   | otherwise = 1
 
-
--- | Retun 'AVFrame' line size.
+-- | Retun 'AVFrame's line size.
 frameLineSize :: AVFrame -> IO (Maybe CInt)
 frameLineSize frame = do
   w   <- getWidth frame
@@ -156,17 +152,18 @@ frameLineSize frame = do
 frameLineSizeT :: AVFrame -> MaybeT IO CInt
 frameLineSizeT = MaybeT . frameLineSize 
 
-
--- Returns frame's image alignment.
+-- Return 'AVFrame's alignment.
 frameAlign :: AVFrame -> IO (Maybe CInt)
 frameAlign = fmap (fmap lineSizeAlign) . frameLineSize 
 
--- Transformer version of frameAlign.
+-- Transformer version of 'frameAlign'.
 frameAlignT :: AVFrame -> MaybeT IO CInt
-frameAlignT = MaybeT . frameAlign 
+frameAlignT = MaybeT . frameAlign
+
+
+-- * Wrappers for copying 'AVFrame's image to buffer.    
         
-        
--- | Return the size in bytes of the amount of data stored in 'AVFrame'.
+-- | Return size of buffer for 'AVFrame's image.
 frameBufferSize :: AVFrame -> IO (Maybe CInt)
 frameBufferSize frame =
   runMaybeT $ do
@@ -177,13 +174,11 @@ frameBufferSize frame =
       h   <- getHeight frame
       Just <$> av_image_get_buffer_size fmt w h a
 
-
 -- | Transformer version of 'frameBufferSize'.
 frameBufferSizeT :: AVFrame -> MaybeT IO CInt
 frameBufferSizeT = MaybeT . frameBufferSize
 
-
--- | Copy image data from 'AVFrame' into a buffer.      
+-- | Copy 'AVFrame's image to buffer.      
 -- It is assumed that size of buffer is equal to
 --
 -- > bufSize <- fromJust <$> frameBufferSize frame.
@@ -214,7 +209,6 @@ frameCopyToBuffer frame buffer =
           h
           a
           
-
 -- | Transformer version of 'frameCopyToBuffer'.
 frameCopyToBufferT :: AVFrame -> Ptr CUChar -> MaybeT IO CInt
 frameCopyToBufferT frame = MaybeT . frameCopyToBuffer frame
