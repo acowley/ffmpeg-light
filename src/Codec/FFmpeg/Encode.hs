@@ -60,8 +60,8 @@ foreign import ccall "av_guess_format"
   av_guess_format :: CString -> CString -> CString -> IO AVOutputFormat
 
 foreign import ccall "avformat_alloc_output_context2"
-  avformat_alloc_output_context :: Ptr AVFormatContext -> AVOutputFormat
-                                -> CString -> CString -> IO CInt
+  avformat_alloc_output_context2 :: Ptr AVFormatContext -> AVOutputFormat
+                                 -> CString -> CString -> IO CInt
 
 foreign import ccall "avformat_new_stream"
   avformat_new_stream :: AVFormatContext -> AVCodec -> IO AVStream
@@ -117,17 +117,21 @@ data EncodingParams =
                  -- during the palettization process. This will
                  -- improve image quality, but result in a larger
                  -- file.
+                 , epFormatName :: Maybe String
+                 -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
+                 -- from the output file name. If 'Just', the string value
+                 -- should be the one available in @ffmpeg -formats@.
                  }
 
 -- | Use default parameters for a video of the given width and
 -- height, forcing the choice of the h264 encoder.
 defaultH264 :: CInt -> CInt -> EncodingParams
-defaultH264 w h = EncodingParams w h 30 (Just avCodecIdH264) Nothing "medium"
+defaultH264 w h = EncodingParams w h 30 (Just avCodecIdH264) Nothing "medium" Nothing
 
 -- | Use default parameters for a video of the given width and
 -- height. The output format is determined by the output file name.
 defaultParams :: CInt -> CInt -> EncodingParams
-defaultParams w h = EncodingParams w h 30 Nothing Nothing ""
+defaultParams w h = EncodingParams w h 30 Nothing Nothing "" Nothing
 
 -- | Determine if the bitwise intersection of two values is non-zero.
 checkFlag :: Bits a => a -> a -> Bool
@@ -203,13 +207,19 @@ initTempFrame ep fmt = do
 
 -- | Allocate an output context inferring the codec from the given
 -- file name.
-allocOutputContext :: FilePath -> IO AVFormatContext
-allocOutputContext fname = do
+allocOutputContext :: Maybe String -> FilePath -> IO AVFormatContext
+allocOutputContext outputFormat fname =
+  let
+    withFormat = case outputFormat of
+      Just f -> withCString f
+      Nothing -> (\f -> f nullPtr)
+  in do
   oc <- alloca $ \ocTmp -> do
           r <- withCString fname $ \fname' ->
-                 avformat_alloc_output_context
-                   ocTmp (AVOutputFormat nullPtr)
-                   nullPtr fname'
+                 withFormat $ \format ->
+                   avformat_alloc_output_context2
+                     ocTmp (AVOutputFormat nullPtr)
+                     format fname'
           when (r < 0)
                (error "Couldn't allocate output format context")
           peek ocTmp
@@ -305,7 +315,7 @@ palettizeJuicy ep pix =
 frameWriter :: EncodingParams -> FilePath
             -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
 frameWriter ep fname = do
-  oc <- allocOutputContext fname
+  oc <- allocOutputContext (epFormatName ep) fname
   (st,ctx) <- initStream ep oc
 
   dstFmt <- getPixelFormat ctx
