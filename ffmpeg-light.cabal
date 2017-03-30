@@ -48,6 +48,11 @@ flag BuildVPlayDemo
   default:     False
   manual:      True
 
+flag BuildTranscodeDemo
+  description: Build transcode demo executable
+  default:     False
+  manual:      True
+
 library
   exposed-modules:     Codec.FFmpeg,
                        Codec.FFmpeg.Common,
@@ -108,3 +113,14 @@ executable vplay
   main-is:           VPlay.hs
   default-language:  Haskell2010
   ghc-options:      -Wall -O2
+
+executable transcode
+  if !flag(BuildTranscodeDemo)
+    buildable:      False
+  build-depends:    base < 5, JuicyPixels
+  if flag(BuildTranscodeDemo)
+    build-depends:  ffmpeg-light
+  hs-source-dirs:   demo
+  main-is:          Transcode.hs
+  default-language: Haskell2010
+  ghc-options:      -Wall
