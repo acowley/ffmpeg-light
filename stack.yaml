@@ -16,6 +16,7 @@ flags:
     BuildDemo: true
     BuildRasterDemo: true
     BuildVPlayDemo: true
+    BuildTranscodeDemo: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []
