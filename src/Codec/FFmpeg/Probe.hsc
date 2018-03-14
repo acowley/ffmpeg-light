@@ -1,4 +1,3 @@
-
 {-# LANGUAGE
     ForeignFunctionInterface,
     GeneralizedNewtypeDeriving
@@ -20,7 +19,7 @@ module Codec.FFmpeg.Probe (
 import Control.Applicative ( Applicative )
 import Control.Monad.Catch ( MonadMask, finally )
 import Control.Monad.Reader
-import Control.Monad.Trans.Either
+import Control.Monad.Trans.Except
 import Data.Int ( Int64 )
 import Foreign.C.String ( CString, peekCString, withCString )
 import Foreign.C.Types ( CInt(..) )
@@ -50,7 +49,7 @@ newtype AvFormat m a = AvFormat { unAvFormat :: ReaderT AVFormatContext m a }
 
 withAvFile :: (MonadMask m, MonadIO m) => String -> AvFormat m a -> m a
 withAvFile fn f = do
-    ectx <- runEitherT $ openFile fn
+    ectx <- runExceptT $ openFile fn
     case ectx of
         Left e    -> liftIO $ fail e
         Right ctx -> finally
