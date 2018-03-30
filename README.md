@@ -8,7 +8,8 @@ import Codec.Picture
 import Control.Applicative
 
 go :: IO (Maybe DynamicImage)
-go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
+go = do initFFmpeg
+        (getFrame, cleanup) <- imageReader (File "myVideo.mov")
         (fmap ImageRGB8 <$> getFrame) <* cleanup
 ```
 
