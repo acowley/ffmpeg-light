@@ -1,4 +1,4 @@
-Minimal bindings to the [FFmpeg](www.ffmpeg.org) library.
+Minimal bindings to the [FFmpeg](http://www.ffmpeg.org) library.
 
 Stream frames from an encoded video, or stream frames to a video output file. To read the first frame from an `h264`-encoded file into a [`JuicyPixels`](http://hackage.haskell.org/package/JuicyPixels) `Maybe DynamicImage`,
 
