@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.12.0.1
+version:             0.12.1.0
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -15,19 +15,20 @@ description:         Stream frames from an encoded video, or stream frames to
                      > go = do (getFrame, cleanup) <- imageReader "myVideo.mov"
                      >         (fmap ImageRGB8 <$> getFrame) <* cleanup
                      .
-                     Tested with FFmpeg 3.1 - 3.2.4
+                     Tested with FFmpeg 3.1 - 3.4.2
 
 license:             BSD3
 license-file:        LICENSE
 author:              Anthony Cowley
 maintainer:          acowley@gmail.com
-copyright:           Copyright (C) 2014 Anthony Cowley
+copyright:           Copyright (C) 2018 Anthony Cowley
 homepage:            http://github.com/acowley/ffmpeg-light
 bug-reports:         http://github.com/acowley/ffmpeg-light/issues
 category:            Codec
 build-type:          Simple
-extra-source-files:  src/hscMacros.h, CHANGELOG.md
+extra-source-files:  src/hscMacros.h, src/nameCompat.h, CHANGELOG.md
 cabal-version:       >=1.10
+tested-with:         GHC == 8.0.2, GHC == 8.2.2, GHC == 8.4.2
 
 source-repository head
   type:     git
@@ -66,7 +67,7 @@ library
                        Codec.FFmpeg.Internal.Debug,
                        Codec.FFmpeg.Internal.Linear
   build-tools:         hsc2hs
-  build-depends:       base >=4.6 && < 4.11,
+  build-depends:       base >=4.6 && < 4.12,
                        either,
                        exceptions,
                        vector >= 0.10.9 && < 0.13,

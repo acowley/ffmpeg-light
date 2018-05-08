@@ -137,6 +137,7 @@ newtype AVClass = AVClass (Ptr ()) deriving (Storable, HasPtr)
 #mkField AVClass, AVClass
 #hasField AVInputFormat, AVClass, priv_class
 
+#if LIBAVUTIL_VERSION_MAJOR > 52
 getAVCategory :: AVInputFormat -> IO Category
 getAVCategory aif =
   do c <- getAVClass aif
@@ -152,6 +153,7 @@ newtype Category = Category CInt deriving (Eq,Ord,Show,Read,Enum)
         AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT, AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT, AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT,\
         AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT, AV_CLASS_CATEGORY_DEVICE_OUTPUT, AV_CLASS_CATEGORY_DEVICE_INPUT,\
         AV_CLASS_CATEGORY_NB
+#endif
 
 newtype AVIOContext = AVIOContext (Ptr ()) deriving (Storable, HasPtr)
 
