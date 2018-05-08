@@ -1,3 +1,7 @@
+# 0.12.1
+* Bump base upper bound
+* Rewritten Travis-CI support for GHC 8.02, 8.2.2, and 8.4.2
+
 # 0.12.0
 
 * Refactoring to better interoperate with SDL2
