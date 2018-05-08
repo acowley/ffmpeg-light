@@ -1,6 +1,6 @@
+module Main where
 import Codec.FFmpeg
 import Codec.Picture
-import Control.Applicative
 import Control.Monad (replicateM_)
 import qualified Data.Time.Clock as C
 import qualified Data.Vector.Storable as V
@@ -22,9 +22,9 @@ pulseVid =
          go 600 _ _ = boom Nothing
          go n d i = do boom' $ V.replicate (sz*sz) (fromIntegral i)
                        let i' = i + d
-                       if i' < 100 
+                       if i' < 100
                        then go (n+1) 1 101
-                       else if i' > 255 
+                       else if i' > 255
                             then go (n+1) (-1) 254
                             else go (n+1) d i'
      go 0 (-1) 255
@@ -38,7 +38,7 @@ testEncode = initFFmpeg >> pulseVid >> putStrLn "All done!"
 -- | Decoding example. Try changing 'ImageRGB8' to 'ImageY8' in the
 -- 'savePngImage' lines to automatically decode to grayscale images!
 testDecode :: FilePath -> IO ()
-testDecode vidFile = 
+testDecode vidFile =
   do initFFmpeg
      (getFrame, cleanup) <- imageReaderTime (File vidFile)
      frame1 <- getFrame
@@ -87,11 +87,11 @@ main = do args <- getArgs
           case args of
             [] -> testEncode
             [s]
-              | s `elem` ["--help", "-help", "-h"] -> error usage 
+              | s `elem` ["--help", "-help", "-h"] -> error usage
               | s == "cam" -> testCamera
             [vidFile] -> testDecode vidFile
             _ -> error usage
-  where usage = 
+  where usage =
           unlines [ "Usage: demo [videoFile]"
                   , "  If no argument is given, a test video named "
                   , "  pulse.mov is generated."
@@ -99,4 +99,3 @@ main = do args <- getArgs
                   , "  If a file name is given, then two frames are "
                   , "  extracted: the first frame, and the 301st."
                   , "  These are saved to frame1.png and frame2.png" ]
-

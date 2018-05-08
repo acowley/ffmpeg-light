@@ -7,11 +7,9 @@ import Codec.FFmpeg.Common
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
-import Control.Applicative
 import Control.Arrow (first)
 import Control.Monad (when, void)
 import Control.Monad.Except
-import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
 import Foreign.C.String
 import Foreign.C.Types

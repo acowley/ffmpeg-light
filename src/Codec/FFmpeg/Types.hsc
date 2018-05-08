@@ -2,7 +2,6 @@
              GeneralizedNewtypeDeriving #-}
 module Codec.FFmpeg.Types where
 import Codec.FFmpeg.Enums
-import Control.Applicative
 import Control.Monad (zipWithM_,when)
 import Foreign.C.String (CString)
 import Foreign.C.Types
@@ -14,6 +13,7 @@ import Foreign.Storable
 #include <libavutil/avutil.h>
 #include <libswscale/swscale.h>
 #include "hscMacros.h"
+#include "nameCompat.h"
 
 class HasPtr a where
   getPtr :: a -> Ptr ()

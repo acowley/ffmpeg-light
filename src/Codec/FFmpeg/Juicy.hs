@@ -8,19 +8,14 @@ import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Internal.Linear (V2(..))
 import Codec.FFmpeg.Types
-import Control.Applicative
-import Control.Arrow (first, (&&&))
+import Control.Arrow (first)
 import Control.Monad ((>=>))
 import Control.Monad.Except
-import Control.Monad.IO.Class
-import Control.Monad.Trans.Class
 import Control.Monad.Trans.Maybe
 import Data.Foldable (traverse_)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as VM
 import Foreign.C.Types
-import Foreign.Marshal.Array (advancePtr, copyArray)
-import Foreign.Ptr (castPtr, Ptr)
 import Foreign.Storable (sizeOf)
 import Data.Maybe (maybe)
 
@@ -35,7 +30,7 @@ frameToVectorT :: AVFrame -> MaybeT IO (V.Vector CUChar)
 frameToVectorT frame = do
 
   bufSize <- fromIntegral <$> frameBufferSizeT frame
-       
+
   v <- MaybeT $ do
 
          v <- VM.new bufSize
@@ -61,16 +56,16 @@ toJuicy frame = runMaybeT $ do
   v <- frameToVectorT frame
 
   MaybeT $ do
-  
+
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
-    
+
     let mkImage :: V.Storable (PixelBaseComponent a)
                 => (Image a -> DynamicImage) -> Maybe DynamicImage
         mkImage c = Just $ c (Image w h (V.unsafeCast v))
-  
+
     fmt <- getPixelFormat frame
-        
+
     return $ case () of
                _ | fmt == avPixFmtRgb24 -> mkImage ImageRGB8
                  | fmt == avPixFmtGray8 -> mkImage ImageY8
@@ -81,15 +76,15 @@ toJuicy frame = runMaybeT $ do
 -- | Convert an 'AVFrame' to an 'Image'.
 toJuicyImage :: forall p. JuicyPixelFormat p => AVFrame -> IO (Maybe (Image p))
 toJuicyImage frame = runMaybeT $ do
-  
+
   fmt <- lift $ getPixelFormat frame
   guard (fmt == juicyPixelFormat ([] :: [p]))
-          
+
   MaybeT $ do
-    
+
     w <- fromIntegral <$> getWidth frame
     h <- fromIntegral <$> getHeight frame
-    
+
     fmap (Image w h . V.unsafeCast) <$> frameToVector frame
 
 
