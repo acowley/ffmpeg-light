@@ -1,7 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Minimal operations on small vector types.
 module Codec.FFmpeg.Internal.Linear where
-import Control.Applicative
 import Foreign.C.Types
 import Foreign.Ptr (castPtr)
 import Foreign.Storable

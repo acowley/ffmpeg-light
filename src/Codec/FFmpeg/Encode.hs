@@ -12,7 +12,6 @@ import Codec.FFmpeg.Internal.Linear
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Codec.Picture
-import Control.Applicative
 import Control.Monad (when, void)
 import Data.Bits
 import Data.IORef

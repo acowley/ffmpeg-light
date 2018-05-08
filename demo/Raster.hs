@@ -1,7 +1,7 @@
 module Main where
 import Codec.FFmpeg
 import Codec.Picture
-import Codec.Picture.Types (dropTransparency)
+-- import Codec.Picture.Types (dropTransparency)
 import Control.Monad (forM_)
 import Graphics.Rasterific
 import Graphics.Rasterific.Linear
@@ -86,13 +86,13 @@ bgGrad = withSampler SamplerRepeat $
 
 -- | Adapted from the Rasterific logo example.
 logoTest :: Texture PixelRGBA8 -> Vector -> Image PixelRGBA8
-logoTest texture insetOrigin = 
+logoTest texture insetOrigin =
   renderDrawing fgSizei fgSizei background (bg >> drawing)
-  where 
+  where
     beziers = logo 40 False $ V2 10 10
     inverse = logo 20 True $ (V2 20 20 + insetOrigin)
     bg = withTexture bgGrad . fill $ rectangle (V2 0 0) fgSize fgSize
-    drawing = withTexture texture . fill 
+    drawing = withTexture texture . fill
             . transform (applyTransformation $ scale fgScale fgScale)
             $ beziers ++ inverse
 
