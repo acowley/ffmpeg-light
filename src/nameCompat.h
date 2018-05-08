@@ -3,6 +3,7 @@
    are locked down with these old versions, we hack in support for the
    newer constant names. */
 
+#if LIBAVUTIL_VERSION_MAJOR < 53
 #define AV_PIX_FMT_NONE PIX_FMT_NONE
 #define AV_PIX_FMT_RGB24 PIX_FMT_RGB24
 #define AV_PIX_FMT_RGBA PIX_FMT_RGBA
@@ -65,3 +66,4 @@
 
 #define AVFMT_ALLOW_FLUSH -1
 #define AVFMT_TS_NONSTRICT -1
+#endif

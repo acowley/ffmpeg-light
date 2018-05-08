@@ -10,6 +10,7 @@ import Foreign.Storable (Storable)
 #include <libavutil/pixfmt.h>
 #include <libavutil/mathematics.h>
 #include <libswscale/swscale.h>
+#include "nameCompat.h"
 
 newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 #enum AVMediaType,AVMediaType \
