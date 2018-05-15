@@ -106,7 +106,8 @@ openFile filename =
     withCString filename $ \cstr ->
       do poke (castPtr ctx) nullPtr
          r <- avformat_open_input ctx cstr nullPtr nullPtr
-         when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
+         when (r /= 0) (stringError r >>= \s ->
+                          fail $ "ffmpeg failed opening file: " ++ s)
          peek ctx
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
