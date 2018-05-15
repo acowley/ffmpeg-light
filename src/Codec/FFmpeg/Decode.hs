@@ -60,8 +60,9 @@ dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
   r <- withCString k $ \k' -> withCString v $ \v' ->
          av_dict_set d k' v' 0
-  when (r < 0)
-       (error $ "av_dict_set failed("++show r++"): "++k++" => "++v)
+  when (r < 0) $
+    stringError r >>= \err ->
+       error $ "av_dict_set failed("++ err ++"): "++k++" => "++v
 
 -- * FFmpeg Decoding Interface
 
@@ -76,7 +77,9 @@ openCamera cam cfg =
          r <- alloca $ \dict -> do
                 setConfig dict cfg
                 avformat_open_input ctx cstr nullPtr dict
-         when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
+         when (r /= 0) $
+           stringError r >>= \err ->
+             fail ("ffmpeg failed opening file: " ++ err)
          peek ctx
   where
     run :: (a -> IO b) -> Maybe a -> IO ()
@@ -106,7 +109,8 @@ openFile filename =
     withCString filename $ \cstr ->
       do poke (castPtr ctx) nullPtr
          r <- avformat_open_input ctx cstr nullPtr nullPtr
-         when (r /= 0) (fail $ "ffmpeg failed opening file: " ++ show r)
+         when (r /= 0) (stringError r >>= \s ->
+                          fail $ "ffmpeg failed opening file: " ++ s)
          peek ctx
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an

@@ -5,8 +5,10 @@ import Codec.FFmpeg.Types
 import Control.Monad (when)
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
+import Foreign.C.String
 import Foreign.C.Types
 import Foreign.Ptr
+import Foreign.Marshal.Alloc (allocaBytes)
 import Control.Monad.Trans.Maybe
 
 foreign import ccall "avcodec_open2"
@@ -208,7 +210,21 @@ frameCopyToBuffer frame buffer =
           w
           h
           a
-          
+
 -- | Transformer version of 'frameCopyToBuffer'.
 frameCopyToBufferT :: AVFrame -> Ptr CUChar -> MaybeT IO CInt
 frameCopyToBufferT frame = MaybeT . frameCopyToBuffer frame
+
+-- * FFmpeg Errors
+
+foreign import ccall "av_strerror"
+  av_strerror :: CInt -> Ptr CChar -> CSize -> IO CInt
+
+stringError :: CInt -> IO String
+stringError err =
+  allocaBytes len $ \block -> do
+    let buf = castPtr block
+    _ <- av_strerror err buf (fromIntegral len)
+    peekCString buf
+  where
+    len = 1000
