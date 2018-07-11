@@ -1,3 +1,6 @@
+# 0.12.2
+* Better support for ffmpeg-3.4.2 API changes
+
 # 0.12.1
 * Bump base upper bound
 * Rewritten Travis-CI support for GHC 8.02, 8.2.2, and 8.4.2

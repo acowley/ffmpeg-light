@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CPP, ForeignFunctionInterface #-}
 -- | Video encoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
@@ -170,7 +170,11 @@ initStream ep oc = do
   needsHeader <- checkFlag avfmtGlobalheader <$>
                  (getOutputFormat oc >>= getFormatFlags)
   when needsHeader $
+#if FFMPEG_LIGHT_LEGACY
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
+#else
+    getCodecFlags ctx >>= setCodecFlags ctx . (.|. avCodecFlagGlobalHeader)
+#endif
 
   -- _ <- withCString "vprofile" $ \kStr ->
   --        withCString (preset ep) $ \vStr ->
@@ -348,7 +352,9 @@ frameWriter ep fname = do
   -- of scaling the nominal, desired frame rate (given by
   -- 'framePeriod') to the stream's time_base.
   tb <- getTimeBase st
+#if FFMPEG_LIGHT_LEGACY
   isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
+#endif
 
   let checkPalCompat
         | dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8 = const True
@@ -394,7 +400,7 @@ frameWriter ep fname = do
                False -> (+ frameTime) <$> getPts dstFrame
            modifyIORef frameNum (+1)
            return ts
-
+#if FFMPEG_LIGHT_LEGACY
       addRaw Nothing = return ()
       addRaw (Just (_, _, pixels)) =
         do resetPacket
@@ -408,14 +414,16 @@ frameWriter ep fname = do
            V.unsafeWith pixels $ \ptr -> do
              setData pkt (castPtr ptr)
              writePacket
+#endif
       addEncoded Nothing = do resetPacket
                               encode_video_check ctx pkt Nothing >>=
                                 flip when (writePacket >> addEncoded Nothing)
       addEncoded (Just srcImg@(srcFmt, V2 srcW srcH, pixels)) =
         do resetPacket
            when (not $ checkPalCompat srcImg)
-                (error $ "Palettized output requires source images to be the \
-                         \same resolution as the output video")
+                (error $
+                 unlines [ "Palettized output requires source images to be the "
+                         , "same resolution as the output video" ])
            let pixels' = maybe pixels ($ V.unsafeCast pixels) palettizer
            sws' <- for sws $ \sPtr -> do
                      s <- readIORef sPtr
@@ -430,7 +438,11 @@ frameWriter ep fname = do
            -- Make sure the GC hasn't clobbered our palettized pixel data
            let (fp,_,_) = V.unsafeToForeignPtr pixels'
            touchForeignPtr fp
+#if FFMPEG_LIGHT_LEGACY
       addFrame = if isRaw then addRaw else addEncoded
+#else
+      addFrame = addEncoded
+#endif
       go Nothing = do addFrame Nothing
                       write_trailer_check oc
                       _ <- codec_close ctx

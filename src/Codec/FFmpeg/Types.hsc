@@ -203,6 +203,7 @@ av_rescale_q a bq cq = av_rescale_rnd a b c avRoundNearInf
   where b = fromIntegral (numerator bq) * fromIntegral (denomenator cq)
         c = fromIntegral (numerator cq) * fromIntegral (denomenator bq)
 
+#if LIBAVFORMAT_VERSION_MAJOR < 57
 data AVFrac = AVFrac { fracVal :: CLong
                      , fracNum :: CLong
                      , fracDen :: CLong } deriving Show
@@ -216,6 +217,7 @@ instance Storable AVFrac where
   poke ptr (AVFrac v n d) = do (#poke AVFrac, val) ptr v
                                (#poke AVFrac, num) ptr n
                                (#poke AVFrac, den) ptr d
+#endif
 
 -- | The input source can be a file or a camera.  When using 'Camera',
 -- frequently in the form @Camera "0:0" defaultCameraConfig@, the first input video device

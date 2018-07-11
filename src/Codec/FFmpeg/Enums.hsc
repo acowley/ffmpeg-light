@@ -12,6 +12,12 @@ import Foreign.Storable (Storable)
 #include <libswscale/swscale.h>
 #include "nameCompat.h"
 
+#if LIBAVFORMAT_VERSION_MAJOR < 57
+#define FFMPEG_LIGHT_LEGACY 1
+#else
+#define FFMPEG_LIGHT_LEGACY 0
+#endif
+
 newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 #enum AVMediaType,AVMediaType \
  , AVMEDIA_TYPE_VIDEO\
@@ -171,6 +177,7 @@ newtype AVRoundMode = AVRoundMode CInt deriving (Eq, Storable)
  , AV_ROUND_PASS_MINMAX
 
 newtype CodecFlag = CodecFlag CInt deriving (Eq, Bits, Storable)
+#if LIBAVCODEC_VERSION_MAJOR < 57
 #enum CodecFlag, CodecFlag \
  , CODEC_FLAG_UNALIGNED\
  , CODEC_FLAG_QSCALE\
@@ -195,8 +202,30 @@ newtype CodecFlag = CodecFlag CInt deriving (Eq, Bits, Storable)
  , CODEC_FLAG_LOOP_FILTER\
  , CODEC_FLAG_INTERLACED_ME\
  , CODEC_FLAG_CLOSED_GOP
+#else
+#enum CodecFlag, CodecFlag \
+ , AV_CODEC_FLAG_UNALIGNED\
+ , AV_CODEC_FLAG_QSCALE\
+ , AV_CODEC_FLAG_4MV\
+ , AV_CODEC_FLAG_OUTPUT_CORRUPT\
+ , AV_CODEC_FLAG_QPEL\
+ , AV_CODEC_FLAG_PASS1\
+ , AV_CODEC_FLAG_PASS2\
+ , AV_CODEC_FLAG_LOOP_FILTER\
+ , AV_CODEC_FLAG_GRAY\
+ , AV_CODEC_FLAG_PSNR\
+ , AV_CODEC_FLAG_TRUNCATED\
+ , AV_CODEC_FLAG_INTERLACED_DCT\
+ , AV_CODEC_FLAG_LOW_DELAY\
+ , AV_CODEC_FLAG_GLOBAL_HEADER\
+ , AV_CODEC_FLAG_BITEXACT\
+ , AV_CODEC_FLAG_AC_PRED\
+ , AV_CODEC_FLAG_INTERLACED_ME\
+ , AV_CODEC_FLAG_CLOSED_GOP
+#endif
 
 newtype FormatFlag = FormatFlag CInt deriving (Eq, Bits, Storable)
+#if LIBAVCODEC_VERSION_MAJOR < 57
 #enum FormatFlag, FormatFlag \
  , AVFMT_NOFILE\
  , AVFMT_NEEDNUMBER\
@@ -208,6 +237,23 @@ newtype FormatFlag = FormatFlag CInt deriving (Eq, Bits, Storable)
  , AVFMT_NOSTREAMS\
  , AVFMT_ALLOW_FLUSH\
  , AVFMT_TS_NONSTRICT
+#else
+#enum FormatFlag, FormatFlag \
+ , AVFMT_NOFILE\
+ , AVFMT_NEEDNUMBER\
+ , AVFMT_GLOBALHEADER\
+ , AVFMT_NOTIMESTAMPS\
+ , AVFMT_VARIABLE_FPS\
+ , AVFMT_NODIMENSIONS\
+ , AVFMT_NOSTREAMS\
+ , AVFMT_NOBINSEARCH\
+ , AVFMT_NOGENSEARCH\
+ , AVFMT_NO_BYTE_SEEK\
+ , AVFMT_ALLOW_FLUSH\
+ , AVFMT_TS_NONSTRICT\
+ , AVFMT_TS_NEGATIVE\
+ , AVFMT_SEEK_TO_PTS
+#endif
 
 newtype PacketFlag = PacketFlag CInt deriving (Eq, Bits, Storable)
 #enum PacketFlag, PacketFlag \
