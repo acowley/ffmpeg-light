@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, ForeignFunctionInterface #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 -- | Video encoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
@@ -29,6 +29,8 @@ import Foreign.Marshal.Utils
 
 import Foreign.Ptr
 import Foreign.Storable
+
+#include <libavformat/avformat.h>
 
 -- Based on the FFmpeg muxing example
 -- http://www.ffmpeg.org/doxygen/2.1/doc_2examples_2muxing_8c-example.html
@@ -170,7 +172,7 @@ initStream ep oc = do
   needsHeader <- checkFlag avfmtGlobalheader <$>
                  (getOutputFormat oc >>= getFormatFlags)
   when needsHeader $
-#if FFMPEG_LIGHT_LEGACY
+#if LIBAVFORMAT_VERSION_MAJOR < 57
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
 #else
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. avCodecFlagGlobalHeader)
@@ -352,7 +354,7 @@ frameWriter ep fname = do
   -- of scaling the nominal, desired frame rate (given by
   -- 'framePeriod') to the stream's time_base.
   tb <- getTimeBase st
-#if FFMPEG_LIGHT_LEGACY
+#if LIBAVFORMAT_VERSION_MAJOR < 57
   isRaw <- checkFlag avfmtRawpicture <$> (getOutputFormat oc >>= getFormatFlags)
 #endif
 
@@ -400,7 +402,7 @@ frameWriter ep fname = do
                False -> (+ frameTime) <$> getPts dstFrame
            modifyIORef frameNum (+1)
            return ts
-#if FFMPEG_LIGHT_LEGACY
+#if LIBAVFORMAT_VERSION_MAJOR < 57
       addRaw Nothing = return ()
       addRaw (Just (_, _, pixels)) =
         do resetPacket
@@ -438,7 +440,7 @@ frameWriter ep fname = do
            -- Make sure the GC hasn't clobbered our palettized pixel data
            let (fp,_,_) = V.unsafeToForeignPtr pixels'
            touchForeignPtr fp
-#if FFMPEG_LIGHT_LEGACY
+#if LIBAVFORMAT_VERSION_MAJOR < 57
       addFrame = if isRaw then addRaw else addEncoded
 #else
       addFrame = addEncoded
