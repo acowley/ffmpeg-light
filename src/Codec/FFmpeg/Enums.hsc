@@ -12,12 +12,6 @@ import Foreign.Storable (Storable)
 #include <libswscale/swscale.h>
 #include "nameCompat.h"
 
-#if LIBAVFORMAT_VERSION_MAJOR < 57
-#define FFMPEG_LIGHT_LEGACY 1
-#else
-#define FFMPEG_LIGHT_LEGACY 0
-#endif
-
 newtype AVMediaType = AVMediaType CInt deriving (Eq, Storable)
 #enum AVMediaType,AVMediaType \
  , AVMEDIA_TYPE_VIDEO\
