@@ -1,3 +1,6 @@
+# 0.12.2.2
+* Fix a video playback framerate issue in the `vplay` demo (@gelisam)
+
 # 0.12.2
 * Better support for ffmpeg-3.4.2 API changes
 
