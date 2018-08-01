@@ -15,6 +15,8 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Unsafe (unsafePackCStringFinalizer)
 import Data.Text (Text)
 
+import Data.IORef
+
 import Foreign.C.Types
 import Foreign.Ptr
 
@@ -195,18 +197,21 @@ videoPlayer cfg src = do
 
   (renderTexture, getTexture, cleanup) <- textureReader src
 
+  -- First frame begins.
+  timeRef <- liftIO . newIORef =<< SDL.time
+
   liftIO $ whileJust_ (nothingOnQuit getTexture) $
     \ (next, time) -> do
 
       {- Rendering. -}
 
       -- Rendering start time.
-      rStartTime <- SDL.time
+      rStartTime <- liftIO $ readIORef timeRef
 
       renderTexture next
 
       -- Finish time of rendering.
-      rFinishTime <- SDL.time
+      rFinishTime <- SDL.time :: IO Double
 
       {- Synchronizing. -}
 
@@ -219,6 +224,9 @@ videoPlayer cfg src = do
       when ( time > 0 && rTotalTime < frameTime) $ do
         -- Sleep their difference.
         SDL.delay $ frameTime - rTotalTime
+
+      -- Next frame begins.
+      liftIO . writeIORef timeRef =<< SDL.time
 
   {- Cleanup. -}
 
