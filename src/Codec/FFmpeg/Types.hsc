@@ -77,6 +77,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField CodecFlags, CodecFlag
 #mkField CodecID, AVCodecID
 #mkField PrivData, (Ptr ())
+#mkField TicksPerFrame, CInt
 
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
@@ -86,6 +87,13 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodecContext, CodecFlags, flags
 #hasField AVCodecContext, CodecID, codec_id
 #hasField AVCodecContext, PrivData, priv_data
+#hasField AVCodecContext, TicksPerFrame, ticks_per_frame
+
+getFps :: (HasTimeBase a, HasTicksPerFrame a) => a -> IO CDouble
+getFps x = do
+  timeBase <- getTimeBase x
+  ticksPerFrame <- getTicksPerFrame x
+  pure (1.0 / av_q2d timeBase / fromIntegral ticksPerFrame)
 
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 
