@@ -3,6 +3,7 @@
 module Codec.FFmpeg.Types where
 import Codec.FFmpeg.Enums
 import Control.Monad (zipWithM_,when)
+import Data.Maybe (fromMaybe)
 import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.Ptr
@@ -77,7 +78,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField CodecFlags, CodecFlag
 #mkField CodecID, AVCodecID
 #mkField PrivData, (Ptr ())
-#mkField AspectRatio, AVRational
+#mkField RawAspectRatio, AVRational
 
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
@@ -87,7 +88,18 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodecContext, CodecFlags, flags
 #hasField AVCodecContext, CodecID, codec_id
 #hasField AVCodecContext, PrivData, priv_data
-#hasField AVCodecContext, AspectRatio, sample_aspect_ratio
+#hasField AVCodecContext, RawAspectRatio, sample_aspect_ratio
+
+getAspectRatio :: HasRawAspectRatio a => a -> IO (Maybe AVRational)
+getAspectRatio = fmap nonZeroAVRational . getRawAspectRatio
+
+-- | When unspecified, the most likely pixel shape is a square
+guessAspectRatio :: HasRawAspectRatio a => a -> IO AVRational
+guessAspectRatio = fmap (fromMaybe (AVRational 1 1)) . getAspectRatio
+
+setAspectRatio :: HasRawAspectRatio a => a -> Maybe AVRational -> IO ()
+setAspectRatio x Nothing      = setRawAspectRatio x (AVRational 0 1)
+setAspectRatio x (Just ratio) = setRawAspectRatio x ratio
 
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 
@@ -183,6 +195,11 @@ pictureSize = #size AVPicture
 
 data AVRational = AVRational { numerator   :: CInt
                              , denomenator :: CInt } deriving Show
+
+-- | FFmpeg often uses 0 to mean "unknown"; use 'Nothing' instead.
+nonZeroAVRational :: AVRational -> Maybe AVRational
+nonZeroAVRational (AVRational 0 _) = Nothing
+nonZeroAVRational ratio            = Just ratio
 
 instance Storable AVRational where
   sizeOf _ = #size AVRational

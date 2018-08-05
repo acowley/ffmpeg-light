@@ -271,17 +271,13 @@ videoPlayer cfg src = do
 
       -- Compute window size. If the pixels aren't square, stretch the window,
       -- SDL will automatically scale the texture to fit.
-      par <- liftIO $ getAspectRatio ctx
+      par <- liftIO $ guessAspectRatio ctx
 
-      let rawAspectRatio :: Double
-          rawAspectRatio = fromIntegral (numerator par) / fromIntegral (denomenator par)
-
-          -- 0 means "unknown", so we default to 1, meaning "square pixels"
-          aspectRatio :: Double
-          aspectRatio = if rawAspectRatio == 0 then 1 else rawAspectRatio
+      let pixelAspectRatio :: Double
+          pixelAspectRatio = fromIntegral (numerator par) / fromIntegral (denomenator par)
 
           windowWidth, windowHeight :: CInt
-          windowWidth = round (aspectRatio * fromIntegral textureWidth)
+          windowWidth = round (pixelAspectRatio * fromIntegral textureWidth)
           windowHeight = textureHeight
 
       -- Create window, renderer and texture.
