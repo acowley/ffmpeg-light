@@ -266,13 +266,24 @@ videoPlayer cfg src = do
       (vsIdx, ctx, _, vs, _) <- prepareVideoCodec inputContext
 
       -- Get frame size.
-      w <- liftIO $ getWidth ctx
-      h <- liftIO $ getHeight ctx
+      textureWidth <- liftIO $ getWidth ctx
+      textureHeight <- liftIO $ getHeight ctx
+
+      -- Compute window size. If the pixels aren't square, stretch the window,
+      -- SDL will automatically scale the texture to fit.
+      par <- liftIO $ guessAspectRatio ctx
+
+      let pixelAspectRatio :: Double
+          pixelAspectRatio = fromIntegral (numerator par) / fromIntegral (denomenator par)
+
+          windowWidth, windowHeight :: CInt
+          windowWidth = round (pixelAspectRatio * fromIntegral textureWidth)
+          windowHeight = textureHeight
 
       -- Create window, renderer and texture.
-      window   <- createWindow w h
+      window   <- createWindow windowWidth windowHeight
       renderer <- createRenderer window
-      texture  <- createTexture renderer w h
+      texture  <- createTexture renderer textureWidth textureHeight
 
       -- Create frame reader.
       let dstFmt = cfgFmtFFmpeg cfg
