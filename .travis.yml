@@ -75,6 +75,22 @@ matrix:
             - libavdevice-dev
           sources: [hvr-ghc, trusty-media]
 
+    - compiler: "ghc-8.6.1"
+    # env: TEST=--disable-tests BENCH=--disable-benchmarks
+      addons:
+        apt:
+          packages:
+            - ghc-ppa-tools
+            - cabal-install-head
+            - ghc-8.6.1
+            - ffmpeg
+            - libavutil-dev
+            - libavformat-dev
+            - libavcodec-dev
+            - libswscale-dev
+            - libavdevice-dev
+          sources: [hvr-ghc, trusty-media]
+
 before_install:
   - HC=${CC}
   - HCPKG=${HC/ghc/ghc-pkg}
