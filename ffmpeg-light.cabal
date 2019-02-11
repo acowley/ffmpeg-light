@@ -67,7 +67,7 @@ library
                        Codec.FFmpeg.Internal.Debug,
                        Codec.FFmpeg.Internal.Linear
   build-tools:         hsc2hs
-  build-depends:       base >=4.6 && < 4.12,
+  build-depends:       base >=4.6 && < 5,
                        either,
                        exceptions,
                        vector >= 0.10.9 && < 0.13,
