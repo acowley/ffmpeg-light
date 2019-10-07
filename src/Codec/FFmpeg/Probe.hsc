@@ -16,16 +16,16 @@ module Codec.FFmpeg.Probe (
     dictFoldM_
     ) where
 
-import Control.Applicative ( Applicative )
 import Control.Monad.Catch ( MonadMask, finally )
-import Control.Monad.Reader
-import Control.Monad.Trans.Except
+import Control.Monad.Reader ( MonadIO, ReaderT, MonadReader, MonadTrans, liftM
+                            , liftIO, ask, runReaderT )
+import Control.Monad.Trans.Except ( runExceptT )
 import Data.Int ( Int64 )
 import Foreign.C.String ( CString, peekCString, withCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Utils ( with )
 import Foreign.Ptr ( Ptr, nullPtr )
-import Foreign.Storable
+import Foreign.Storable ( peekByteOff, peekElemOff )
 
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Decode
