@@ -9,8 +9,8 @@ import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
 import Control.Arrow (first)
 import Control.Monad (when, void)
-import Control.Monad.Except
-import Control.Monad.Trans.Maybe
+import Control.Monad.Except (MonadIO, MonadError, liftIO, throwError, catchError)
+import Control.Monad.Trans.Maybe (MaybeT(MaybeT))
 import Foreign.C.String
 import Foreign.C.Types
 import Foreign.Marshal.Alloc (alloca, free, mallocBytes)

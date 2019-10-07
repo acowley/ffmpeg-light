@@ -10,14 +10,13 @@ import Codec.FFmpeg.Internal.Linear (V2(..))
 import Codec.FFmpeg.Types
 import Control.Arrow (first)
 import Control.Monad ((>=>))
-import Control.Monad.Except
-import Control.Monad.Trans.Maybe
+import Control.Monad.Except (MonadIO, MonadError, lift, guard, runExceptT)
+import Control.Monad.Trans.Maybe (MaybeT(MaybeT), runMaybeT)
 import Data.Foldable (traverse_)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as VM
-import Foreign.C.Types
+import Foreign.C.Types (CUChar)
 import Foreign.Storable (sizeOf)
-import Data.Maybe (maybe)
 
 
 -- | Convert 'AVFrame' to a 'Vector'.
