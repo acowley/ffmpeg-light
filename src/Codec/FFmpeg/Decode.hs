@@ -1,23 +1,27 @@
-{-# LANGUAGE ForeignFunctionInterface, FlexibleContexts, RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE RecordWildCards          #-}
 -- | Video decoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
 module Codec.FFmpeg.Decode where
-import Codec.FFmpeg.Common
-import Codec.FFmpeg.Enums
-import Codec.FFmpeg.Scaler
-import Codec.FFmpeg.Types
-import Control.Arrow (first)
-import Control.Monad (when, void)
-import Control.Monad.Except
-import Control.Monad.Trans.Maybe
-import Foreign.C.String
-import Foreign.C.Types
-import Foreign.Marshal.Alloc (alloca, free, mallocBytes)
-import Foreign.Marshal.Array (advancePtr)
-import Foreign.Marshal.Utils (with)
-import Foreign.Ptr
-import Foreign.Storable
+
+import           Codec.FFmpeg.AudioStream
+import           Codec.FFmpeg.Common
+import           Codec.FFmpeg.Enums
+import           Codec.FFmpeg.Scaler
+import           Codec.FFmpeg.Types
+import           Control.Arrow             (first)
+import           Control.Monad             (void, when)
+import           Control.Monad.Except
+import           Control.Monad.Trans.Maybe
+import           Foreign.C.String
+import           Foreign.C.Types
+import           Foreign.Marshal.Alloc     (alloca, free, mallocBytes)
+import           Foreign.Marshal.Array     (advancePtr)
+import           Foreign.Marshal.Utils     (with)
+import           Foreign.Ptr
+import           Foreign.Storable
 
 -- * FFI Declarations
 
@@ -46,6 +50,10 @@ foreign import ccall "av_malloc"
 
 foreign import ccall "av_read_frame"
   av_read_frame :: AVFormatContext -> AVPacket -> IO CInt
+
+foreign import ccall "avcodec_decode_audio4"
+  decode_audio :: AVCodecContext -> AVFrame -> Ptr CInt -> AVPacket
+               -> IO CInt
 
 foreign import ccall "avcodec_decode_video2"
   decode_video :: AVCodecContext -> AVFrame -> Ptr CInt -> AVPacket
@@ -150,6 +158,20 @@ findVideoStream fmt = do
       ctx <- getCodecContext vidStream
       return (i, ctx, cod, vidStream)
 
+findAudioStream :: (MonadIO m, MonadError String m)
+                => AVFormatContext
+                -> m (CInt, AVCodecContext, AVCodec, AVStream)
+findAudioStream fmt = do
+  wrapIOError . alloca $ \codec -> do
+      poke codec (AVCodec nullPtr)
+      i <- av_find_best_stream fmt avmediaTypeAudio (-1) (-1) codec 0
+      when (i < 0) (fail "Couldn't find audio stream")
+      cod <- peek codec
+      streams <- getStreams fmt
+      audioStream <- peek (advancePtr streams (fromIntegral i))
+      ctx <- getCodecContext audioStream
+      return (i, ctx, cod, audioStream)
+
 -- | Find a registered decoder with a codec ID matching that found in
 -- the given 'AVCodecContext'.
 getDecoder :: (MonadIO m, MonadError String m)
@@ -215,6 +237,31 @@ frameReaderTime dstFmt src =
                                     return $ Just (f, t)
      return (readTS, cleanup)
 
+frameAudioReader :: (MonadIO m, MonadError String m)
+                 => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO ())
+frameAudioReader fileName = do
+  inputContext <- openInput fileName
+  checkStreams inputContext
+  (audioStreamIndex, ctx, cod, audioStream) <- findAudioStream inputContext
+  openCodec ctx cod
+  as <- liftIO $ do
+    bitrate <- getBitRate ctx
+    samplerate <- getSampleRate ctx
+    channelLayout <- getChannelLayout ctx
+    sampleFormat <- getSampleFormat ctx
+    channels <- getChannels ctx
+    codecId <- getCodecID cod
+    return $ AudioStream
+        { asBitRate = bitrate
+        , asSampleRate = samplerate
+        , asSampleFormat = sampleFormat
+        , asChannelLayout = channelLayout
+        , asChannelCount = channels
+        , asCodec = codecId
+        }
+  (readFrame, finalize) <- prepareAudioReader inputContext audioStreamIndex ctx
+  return (as, readFrame, finalize)
+
 -- | Read time stamped RGB frames with the result in the 'MaybeT'
 -- transformer.
 --
@@ -222,6 +269,44 @@ frameReaderTime dstFmt src =
 frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
                  => InputSource -> m (MaybeT IO (AVFrame, Double), IO ())
 frameReaderTimeT = fmap (first MaybeT) . frameReaderTime avPixFmtRgb24
+
+prepareAudioReader :: (MonadIO m, MonadError String m)
+                   => AVFormatContext -> CInt -> AVCodecContext
+                   -> m (IO (Maybe AVFrame), IO ())
+prepareAudioReader fmtCtx audStream codCtx =
+  wrapIOError $ do
+    frame <- frame_alloc_check
+    pkt <- av_packet_alloc
+    let cleanup = do with frame av_frame_free
+                     _ <- codec_close codCtx
+                     with fmtCtx close_input
+                     free (getPtr pkt)
+        getFrame = do
+         r <- av_read_frame fmtCtx pkt
+         if r < 0 then return Nothing else do
+          whichStream <- getStreamIndex pkt
+          if whichStream == audStream
+          then do
+            let decode_func = do
+                  (got_frame, len) <- alloca $ \gt -> do
+                    r <- runWithError "Error coding audio frame" $
+                             decode_audio codCtx frame gt pkt
+                    return (gt, r)
+                  gf <- peek got_frame
+                  if gf == 1
+                    then return ()
+                    else do
+                      sz <- getSize pkt
+                      dt <- getData pkt
+                      setSize pkt (sz-len)
+                      setData pkt (advancePtr dt (fromIntegral len))
+                      endSize <- getSize pkt
+                      if endSize <= 0 then return () else decode_func
+            decode_func
+            free_packet pkt
+            return (Just frame)
+          else free_packet pkt >> getFrame
+    return (getFrame `catchError` const (return Nothing), cleanup)
 
 -- | Construct an action that gets the next available frame, and an
 -- action to release all resources associated with this video stream.

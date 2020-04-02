@@ -1,0 +1,187 @@
+module Codec.FFmpeg.Resampler where
+
+import Codec.FFmpeg.Common
+import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Types
+import Control.Concurrent.STM.TChan
+import Control.Monad.STM
+import Control.Monad (when, void)
+import Foreign.C.String
+import Foreign.C.Types
+import Foreign.Marshal.Alloc
+import Foreign.Marshal.Array
+import Foreign.Ptr
+import Foreign.Storable
+
+foreign import ccall "swr_get_delay"
+  swr_get_delay :: SwrContext -> CLong -> IO CLong
+
+foreign import ccall "swr_convert"
+  swr_convert :: SwrContext -> Ptr (Ptr CUChar) -> CInt
+              -> Ptr (Ptr CUChar) -> CInt -> IO CInt
+
+foreign import ccall "swr_get_out_samples"
+  swr_get_out_samples :: SwrContext -> CInt -> IO CInt
+
+data AudioOpts = AudioOpts
+  { aoChannelLayout :: CULong
+  , aoSampleRate :: CInt
+  , aoSampleFormat :: AVSampleFormat
+  }
+
+makeResampler :: AVCodecContext
+              -> AudioOpts
+              -> AudioOpts
+              -> IO (AVFrame -> IO (), IO (Maybe AVFrame), IO ())
+makeResampler ctx inOpts outOpts = do
+  swr <- initSwrContext inOpts outOpts
+
+  -- fifo <- av_audio_fifo_alloc (aoSampleFormat outOpts) (aoChannelCount outOpts) 1
+  frameChan <- newTChanIO
+
+  let writeFrame frame = do
+        srcSamples <- getNumSamples frame
+        if srcSamples == 0
+           then return ()
+           else do
+            srcRate <- getSampleRate frame
+            delay <- swr_get_delay swr (fromIntegral srcRate)
+            let dstSamples = av_rescale_rnd
+                            (delay + fromIntegral srcSamples)
+                            (fromIntegral (aoSampleRate outOpts))
+                            (fromIntegral srcRate) avRoundUp
+                srcData = castPtr (hasFrameData frame)
+            putStrLn "alloc"
+            dstDataPtr <- malloc
+            lineSize <- malloc
+            dstChannelCount <- av_get_channel_layout_nb_channels
+                (aoChannelLayout outOpts)
+            putStrLn $ "channel count : " ++ show dstChannelCount
+            putStrLn $ "samples : " ++ show dstSamples
+            putStrLn $ "sample fmt : " ++ show (getSampleFormatInt
+                                                (aoSampleFormat outOpts))
+            runWithError "Could not alloc samples"
+                (av_samples_alloc_array_and_samples dstDataPtr lineSize
+                dstChannelCount (fromIntegral dstSamples)
+                (aoSampleFormat outOpts) 0)
+            dstData <- peek dstDataPtr
+            runWithError "Error converting samples"
+                (swr_convert swr nullPtr 0 srcData srcSamples)
+
+            frameSize <- getFrameSize ctx
+            let convertLoop = do
+                  outSamples <- swr_get_out_samples swr 0
+                  if outSamples < frameSize * dstChannelCount
+                     then return ()
+                     else do
+
+                       putStrLn "alloc frame"
+                       frame <- allocAudioFrame ctx
+                       putStrLn "convert"
+                       outSamples <- swr_convert swr (castPtr $ hasFrameData frame)
+                                                     frameSize nullPtr 0
+
+                       putStrLn "write tchan"
+                       atomically $ writeTChan frameChan frame
+                       {-
+                       sz <- av_audio_fifo_size fifo
+                       runWithError "Could not reallocate FIFO"
+                           (av_audio_fifo_realloc fifo (sz + fromIntegral dstSamples))
+                       putStrLn "write"
+                       runWithError "Could not write data to FIFO"
+                           (av_audio_fifo_write fifo (castPtr dstData)
+                            (fromIntegral dstSamples))
+                       -}
+                       convertLoop
+
+            convertLoop
+            free dstData
+            free lineSize
+            putStrLn "ret"
+            return ()
+
+      allocAudioFrame :: AVCodecContext -> IO AVFrame
+      allocAudioFrame ctx = do
+        frame <- av_frame_alloc
+        when (getPtr frame == nullPtr)
+            (error "Error allocating an audio frame")
+
+        setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
+        setChannelLayout frame =<< getChannelLayout ctx
+        setSampleRate frame =<< getSampleRate ctx
+        fs <- (do fs <- getFrameSize ctx
+                  if fs == 0
+                    then return 1000
+                    else return fs)
+        setNumSamples frame fs
+
+        runWithError "Error allocating an audio buffer"
+                        (av_frame_get_buffer frame 0)
+        return frame
+
+      readFrame = do
+        mFrame <- atomically $ tryReadTChan frameChan
+        case mFrame of
+          Nothing -> putStrLn "nothing" >> return Nothing
+          Just _ -> putStrLn "frame" >> return mFrame
+        {-
+        frameSize <- getFrameSize ctx
+        sz <- av_audio_fifo_size fifo
+        if sz < frameSize
+          then return Nothing
+          else do
+            putStrLn "alloc frame"
+            frame <- allocAudioFrame ctx
+            putStrLn "fifo read"
+            runWithError "Falied to read from FIFO"
+                (av_audio_fifo_read fifo (castPtr (hasFrameData frame)) frameSize)
+            putStrLn "ret frame"
+            return $ Just frame
+        -}
+
+      cleanup = do
+        -- av_audio_fifo_free fifo
+        return ()
+
+  return (writeFrame, readFrame, cleanup)
+
+initSwrContext :: AudioOpts -> AudioOpts -> IO SwrContext
+initSwrContext inOpts outOpts = do
+  swr <- swr_alloc
+  when (getPtr swr == nullPtr) (error "Could not allocate resampler context")
+  let set_int str i = do
+        cStr <- newCString str
+        av_opt_set_int (getPtr swr) cStr (fromIntegral i) 0
+        free cStr
+      set_sample_fmt str fmt = do
+        cStr <- newCString str
+        av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
+        free cStr
+
+  -- set_int "in_channel_count" (aoChannelCount inOpts)
+  set_int "in_channel_layout" (aoChannelLayout inOpts)
+  set_int "in_sample_rate" (aoSampleRate inOpts)
+  set_sample_fmt "in_sample_fmt" (aoSampleFormat inOpts)
+  -- set_int "out_channel_count" (aoChannelCount outOpts)
+  set_int "out_channel_layout" (aoChannelLayout inOpts)
+  set_int "out_sample_rate" (aoSampleRate outOpts)
+  set_sample_fmt "out_sample_fmt" (aoSampleFormat outOpts)
+
+  void $ runWithError "Failed to initialize the resampling context" (swr_init swr)
+
+  let get_int str = do
+        cStr <- newCString str
+        p <- malloc
+        r <- av_opt_get_int (getPtr swr) cStr 0 p
+        v <- peek p
+        free p
+        return v
+      get_sample_fmt str = do
+        cStr <- newCString str
+        p <- malloc
+        r <- av_opt_get_sample_fmt (getPtr swr) cStr 0 p
+        fmt <- peek p
+        free p
+        return fmt
+
+  return swr

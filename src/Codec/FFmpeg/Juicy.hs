@@ -158,7 +158,9 @@ imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 -- images are of the target resolution.
 imageWriter :: forall p. JuicyPixelFormat p
             => EncodingParams -> FilePath -> IO (Maybe (Image p) -> IO ())
-imageWriter ep f = (. fmap aux) <$> frameWriter ep f
+imageWriter ep f = do
+  (videoWriter, _) <- frameWriter ep f
+  return $ (. fmap aux) videoWriter
   where aux img = let w = fromIntegral $ imageWidth img
                       h = fromIntegral $ imageHeight img
                       p = V.unsafeCast $ imageData img
