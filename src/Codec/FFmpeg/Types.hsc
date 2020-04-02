@@ -8,11 +8,14 @@ import Foreign.C.String (CString)
 import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
+import Foreign.Marshal.Alloc (malloc)
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/audio_fifo.h>
 #include <libavutil/avutil.h>
 #include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 #include "hscMacros.h"
 #include "nameCompat.h"
 
@@ -68,8 +71,8 @@ mallocAVFormatContext = AVFormatContext <$> avformat_alloc_context
 newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 
 #mkField BitRate, CInt
-#hasField AVCodecContext, BitRate, bit_rate
 
+#mkField SampleFormat, AVSampleFormat
 #mkField Width, CInt
 #mkField Height, CInt
 #mkField TimeBase, AVRational
@@ -80,7 +83,12 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField PrivData, (Ptr ())
 #mkField TicksPerFrame, CInt
 #mkField RawAspectRatio, AVRational
+#mkField SampleRate, CInt
+#mkField ChannelLayout, CULong
+#mkField Channels, CInt
+#mkField FrameSize, CInt
 
+#hasField AVCodecContext, BitRate, bit_rate
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
 #hasField AVCodecContext, TimeBase, time_base
@@ -91,6 +99,11 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodecContext, PrivData, priv_data
 #hasField AVCodecContext, TicksPerFrame, ticks_per_frame
 #hasField AVCodecContext, RawAspectRatio, sample_aspect_ratio
+#hasField AVCodecContext, SampleRate, sample_rate
+#hasField AVCodecContext, ChannelLayout, channel_layout
+#hasField AVCodecContext, Channels, channels
+#hasField AVCodecContext, SampleFormat, sample_fmt
+#hasField AVCodecContext, FrameSize, frame_size
 
 getFps :: (HasTimeBase a, HasTicksPerFrame a) => a -> IO CDouble
 getFps x = do
@@ -124,25 +137,44 @@ newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString
 #mkField Name, CString
 #mkField PixelFormats, (Ptr AVPixelFormat)
+#mkField SampleFormats, (Ptr AVSampleFormat)
+#mkField ChannelLayouts, (Ptr CULong)
+#mkField SupportedSampleRates, (Ptr CInt)
+#mkField Capabilities, CInt
 
 #hasField AVCodec, LongName, long_name
 #hasField AVCodec, Name, name
 #hasField AVCodec, CodecID, id
 #hasField AVCodec, PixelFormats, pix_fmts
+#hasField AVCodec, SampleFormats, sample_fmts
+#hasField AVCodec, ChannelLayouts, channel_layouts
+#hasField AVCodec, SupportedSampleRates, supported_samplerates
+#hasField AVCodec, Capabilities, capabilities
 
 newtype AVDictionary = AVDictionary (Ptr ()) deriving (Storable, HasPtr)
 newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #mkField Pts, CLong
 #mkField PktPts, CLong
 #mkField LineSize, CInt
+#mkField FrameData, (Ptr (Ptr ()))
+#mkField ExtendedData, (Ptr (Ptr ()))
+#mkField NumSamples, CInt
+#mkField Format, CInt
 
 #hasField AVFrame, PixelFormat, format
+#hasField AVFrame, SampleFormat, format
 #hasField AVFrame, Width, width
 #hasField AVFrame, Height, height
 #hasField AVFrame, LineSize, linesize
 #hasField AVFrame, Pts, pts
 #hasField AVFrame, PktPts, pkt_pts
-#hasField AVFrame, Data, data
+#hasField AVFrame, FrameData, data
+#hasField AVFrame, ExtendedData, extended_data
+#hasField AVFrame, NumSamples, nb_samples
+#hasField AVFrame, Format, format
+#hasField AVFrame, Channels, channels
+#hasField AVFrame, ChannelLayout, channel_layout
+#hasField AVFrame, SampleRate, sample_rate
 
 newtype AVPicture = AVPicture (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVPicture, Data, data
@@ -151,8 +183,10 @@ newtype SwsContext = SwsContext (Ptr ()) deriving (Storable, HasPtr)
 newtype AVOutputFormat = AVOutputFormat (Ptr ()) deriving (Storable, HasPtr)
 #mkField FormatFlags, FormatFlag
 #mkField VideoCodecID, AVCodecID
+#mkField AudioCodecID, AVCodecID
 #hasField AVOutputFormat, FormatFlags, flags
 #hasField AVOutputFormat, VideoCodecID, video_codec
+#hasField AVOutputFormat, AudioCodecID, audio_codec
 
 newtype AVInputFormat = AVInputFormat (Ptr ()) deriving (Storable, HasPtr)
 newtype AVClass = AVClass (Ptr ()) deriving (Storable, HasPtr)
@@ -199,12 +233,58 @@ packetSize = #size AVPacket
 pictureSize :: Int
 pictureSize = #size AVPicture
 
+newtype SwrContext = SwrContext (Ptr ()) deriving (Storable, HasPtr)
+
+newtype AVAudioFifo = AVAudioFifo (Ptr ()) deriving (Storable, HasPtr)
+
+foreign import ccall "av_samples_alloc_array_and_samples"
+  av_samples_alloc_array_and_samples :: Ptr (Ptr (Ptr CUChar))
+                                     -> Ptr CInt
+                                     -> CInt
+                                     -> CInt
+                                     -> AVSampleFormat
+                                     -> CInt
+                                     -> IO CInt
+
+foreign import ccall "av_audio_fifo_free"
+  av_audio_fifo_free :: AVAudioFifo -> IO ()
+
+foreign import ccall "av_audio_fifo_alloc"
+  av_audio_fifo_alloc :: AVSampleFormat -> CInt -> CInt -> IO AVAudioFifo
+
+foreign import ccall "av_audio_fifo_realloc"
+  av_audio_fifo_realloc :: AVAudioFifo -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_write"
+  av_audio_fifo_write :: AVAudioFifo -> Ptr (Ptr ()) -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_peek"
+  av_audio_fifo_peek :: AVAudioFifo -> Ptr (Ptr ()) -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_peek_at"
+  av_audio_fifo_peek_at :: AVAudioFifo -> Ptr (Ptr ()) -> CInt -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_read"
+  av_audio_fifo_read :: AVAudioFifo -> Ptr (Ptr ()) -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_drain"
+  av_audio_fifo_drain :: AVAudioFifo -> CInt -> IO CInt
+
+foreign import ccall "av_audio_fifo_reset"
+  av_audio_fifo_reset :: AVAudioFifo -> IO ()
+
+foreign import ccall "av_audio_fifo_size"
+  av_audio_fifo_size :: AVAudioFifo -> IO CInt
+
+foreign import ccall "av_audio_fifo_space"
+  av_audio_fifo_space :: AVAudioFifo -> IO CInt
+
 -- * Types with Haskell equivalents
 
 data AVRational = AVRational { numerator   :: CInt
                              , denomenator :: CInt } deriving Show
 
--- | FFmpeg often uses 0 to mean "unknown"; use 'Nothing' instead.
+-- | FFmpeg often uses 0 to mean "unknown"; use 'Nothing' instead.VRational
 nonZeroAVRational :: AVRational -> Maybe AVRational
 nonZeroAVRational (AVRational 0 _) = Nothing
 nonZeroAVRational ratio            = Just ratio
@@ -229,6 +309,29 @@ av_rescale_q :: CLong -> AVRational -> AVRational -> CLong
 av_rescale_q a bq cq = av_rescale_rnd a b c avRoundNearInf
   where b = fromIntegral (numerator bq) * fromIntegral (denomenator cq)
         c = fromIntegral (numerator cq) * fromIntegral (denomenator bq)
+
+foreign import ccall "av_packet_rescale_ts"
+  av_packet_rescale_ts :: AVPacket -> Ptr AVRational -> Ptr AVRational -> IO ()
+
+packet_rescale_ts :: AVPacket -> AVRational -> AVRational -> IO ()
+packet_rescale_ts packet rat1 rat2 = do
+  ptr1 <- malloc
+  ptr2 <- malloc
+  poke ptr1 rat1
+  poke ptr2 rat2
+  av_packet_rescale_ts packet ptr1 ptr2
+
+{-
+foreign import ccall "log_packet"
+  log_packet :: AVFormatContext -> AVPacket -> IO ()
+
+foreign import ccall "print_av_frame"
+  print_av_frame :: AVFrame -> IO ()
+
+foreign import ccall "print_data"
+  print_data :: Ptr (Ptr CUChar) -> IO ()
+-}
+
 
 #if LIBAVFORMAT_VERSION_MAJOR < 57
 data AVFrac = AVFrac { fracVal :: CLong

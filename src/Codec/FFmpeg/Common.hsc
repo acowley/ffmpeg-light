@@ -1,15 +1,18 @@
-{-# LANGUAGE FlexibleContexts, ForeignFunctionInterface #-}
+{-# LANGUAGE FlexibleContexts         #-}
+{-# LANGUAGE ForeignFunctionInterface #-}
 module Codec.FFmpeg.Common where
-import Codec.FFmpeg.Enums
-import Codec.FFmpeg.Types
-import Control.Monad (when)
-import Control.Monad.Error.Class
-import Control.Monad.IO.Class
-import Foreign.C.String
-import Foreign.C.Types
-import Foreign.Ptr
-import Foreign.Marshal.Alloc (allocaBytes)
-import Control.Monad.Trans.Maybe
+import           Codec.FFmpeg.Enums
+import           Codec.FFmpeg.Types
+import           Control.Exception
+import           Control.Monad             (when)
+import           Control.Monad.Error.Class
+import           Control.Monad.IO.Class
+import           Control.Monad.Trans.Maybe
+import           Foreign.C.String
+import           Foreign.C.Types
+import           Foreign.Marshal.Alloc     (allocaBytes, free)
+import           Foreign.Marshal.Array     (mallocArray)
+import           Foreign.Ptr
 
 foreign import ccall "avcodec_open2"
   open_codec :: AVCodecContext -> AVCodec -> Ptr AVDictionary -> IO CInt
@@ -28,6 +31,9 @@ foreign import ccall "avcodec_close"
 
 foreign import ccall "av_init_packet"
   init_packet :: AVPacket -> IO ()
+
+foreign import ccall "av_packet_alloc"
+  av_packet_alloc :: IO AVPacket
 
 foreign import ccall "av_free_packet"
   free_packet :: AVPacket -> IO ()
@@ -50,6 +56,30 @@ foreign import ccall "sws_scale"
             -> Ptr (Ptr CUChar) -> Ptr CInt -> CInt -> CInt
             -> Ptr (Ptr CUChar) -> Ptr CInt -> IO CInt
 
+foreign import ccall "av_get_channel_layout_nb_channels"
+  av_get_channel_layout_nb_channels :: CULong -> IO CInt
+
+foreign import ccall "swr_alloc"
+  swr_alloc :: IO SwrContext
+
+foreign import ccall "swr_init"
+  swr_init :: SwrContext -> IO CInt
+
+foreign import ccall "av_opt_set_int"
+  av_opt_set_int :: Ptr () -> CString -> CLong -> CInt -> IO CInt
+
+foreign import ccall "av_opt_get_int"
+  av_opt_get_int :: Ptr () -> CString -> CInt -> Ptr CULong -> IO CInt
+
+foreign import ccall "av_opt_set_sample_fmt"
+  av_opt_set_sample_fmt :: Ptr () -> CString -> AVSampleFormat -> CInt -> IO CInt
+
+foreign import ccall "av_opt_get_sample_fmt"
+  av_opt_get_sample_fmt :: Ptr () -> CString -> CInt -> Ptr AVSampleFormat -> IO CInt
+
+foreign import ccall "avcodec_encode_audio2"
+  avcodec_encode_audio2 :: AVCodecContext -> AVPacket -> AVFrame -> Ptr CInt -> IO CInt
+
 -- Return size of buffer for image.
 foreign import ccall "av_image_get_buffer_size"
   av_image_get_buffer_size
@@ -63,7 +93,7 @@ foreign import ccall "av_image_get_buffer_size"
     -> CInt
     -- Size of buffer.
     -> IO CInt
-    
+
 -- Copy image to buffer.
 foreign import ccall "av_image_copy_to_buffer"
   av_image_copy_to_buffer
@@ -85,8 +115,8 @@ foreign import ccall "av_image_copy_to_buffer"
     -> CInt
     -- Number of bytes written to destination.
     -> IO CInt
-    
-    
+
+
 -- * Utility functions
 
 -- | Catch an IOException from an IO action and re-throw it in a
@@ -94,6 +124,25 @@ foreign import ccall "av_image_copy_to_buffer"
 wrapIOError :: (MonadIO m, MonadError String m) => IO a -> m a
 wrapIOError io = liftIO (catchError (fmap Right io) (return . Left . show))
                  >>= either throwError return
+
+newtype FFmpegException = FFmpegException String deriving Show
+
+instance Exception FFmpegException
+
+runWithError :: String -> IO CInt -> IO CInt
+runWithError msg toRun = do
+  r <- toRun
+  when (r < 0) $ do
+    let len = 100 -- I have no idea how long this string should be so this is a guess
+    errCStr <- mallocArray len
+    av_strerror r errCStr (fromIntegral len)
+    errStr <- peekCString errCStr
+    free errCStr
+    avError $ msg ++ " : " ++ errStr
+  return r
+
+avError :: String -> IO a
+avError msg = throwIO $ FFmpegException $ msg
 
 -- * Wrappers that may throw 'IOException's.
 
@@ -123,7 +172,7 @@ avPixelStride fmt
   | fmt == avPixFmtRgb8   = Just 1
   | fmt == avPixFmtPal8   = Just 1
   | otherwise = Nothing
-  
+
 -- | Return line size alignment.
 lineSizeAlign :: CInt -> CInt
 lineSizeAlign lineSize
@@ -146,25 +195,25 @@ lineSizeAlign lineSize
 frameLineSize :: AVFrame -> IO (Maybe CInt)
 frameLineSize frame = do
   w   <- getWidth frame
-  fmt <- getPixelFormat frame  
+  fmt <- getPixelFormat frame
   return $
     (*w) . fromIntegral <$> avPixelStride fmt
 
 -- | Transformer version of 'frameLineSize'.
 frameLineSizeT :: AVFrame -> MaybeT IO CInt
-frameLineSizeT = MaybeT . frameLineSize 
+frameLineSizeT = MaybeT . frameLineSize
 
 -- Return 'AVFrame's alignment.
 frameAlign :: AVFrame -> IO (Maybe CInt)
-frameAlign = fmap (fmap lineSizeAlign) . frameLineSize 
+frameAlign = fmap (fmap lineSizeAlign) . frameLineSize
 
 -- Transformer version of 'frameAlign'.
 frameAlignT :: AVFrame -> MaybeT IO CInt
 frameAlignT = MaybeT . frameAlign
 
 
--- * Wrappers for copying 'AVFrame's image to buffer.    
-        
+-- * Wrappers for copying 'AVFrame's image to buffer.
+
 -- | Return size of buffer for 'AVFrame's image.
 frameBufferSize :: AVFrame -> IO (Maybe CInt)
 frameBufferSize frame =
@@ -180,22 +229,22 @@ frameBufferSize frame =
 frameBufferSizeT :: AVFrame -> MaybeT IO CInt
 frameBufferSizeT = MaybeT . frameBufferSize
 
--- | Copy 'AVFrame's image to buffer.      
+-- | Copy 'AVFrame's image to buffer.
 -- It is assumed that size of buffer is equal to
 --
 -- > bufSize <- fromJust <$> frameBufferSize frame.
 frameCopyToBuffer :: AVFrame -> Ptr CUChar -> IO (Maybe CInt)
 frameCopyToBuffer frame buffer =
   runMaybeT $ do
-  
+
     a <- frameAlignT frame
     s <- frameBufferSizeT frame
-    
+
     MaybeT $ do
-        
-      let imageData = hasData frame
+
+      let imageData = hasFrameData frame
           lineSize  = hasLineSize frame
-      
+
       fmt <- getPixelFormat frame
       w   <- getWidth frame
       h   <- getHeight frame

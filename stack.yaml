@@ -1,4 +1,4 @@
-resolver: lts-9.21
+resolver: lts-15.6
 
 packages:
 - '.'
@@ -17,6 +17,7 @@ flags:
     BuildRasterDemo: true
     BuildVPlayDemo: true
     BuildTranscodeDemo: true
+    BuildAudioDemo: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []

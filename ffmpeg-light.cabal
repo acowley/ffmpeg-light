@@ -54,14 +54,21 @@ flag BuildTranscodeDemo
   default:     False
   manual:      True
 
+flag BuildAudioDemo
+  description: Build audio demo executable
+  default:     False
+  manual:      True
+
 library
   exposed-modules:     Codec.FFmpeg,
+                       Codec.FFmpeg.AudioStream,
                        Codec.FFmpeg.Common,
                        Codec.FFmpeg.Decode,
                        Codec.FFmpeg.Encode,
                        Codec.FFmpeg.Enums,
                        Codec.FFmpeg.Juicy,
                        Codec.FFmpeg.Probe,
+                       Codec.FFmpeg.Resampler,
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,
@@ -71,12 +78,14 @@ library
                        either,
                        exceptions,
                        vector >= 0.10.9 && < 0.13,
+                       stm >= 2.0.0.0 && < 3.0.0.0.0,
                        transformers >= 0.4.1 && < 0.6,
                        mtl >= 2.2.1 && < 2.3,
                        JuicyPixels >= 3.1 && < 3.4,
                        bytestring
 
-  pkgconfig-depends:   libavutil, libavformat, libavcodec, libswscale, libavdevice
+  pkgconfig-depends:   libavutil, libavformat, libavcodec, libswscale, libavdevice,
+                       libswresample
   hs-source-dirs:      src
   include-dirs:        src
   default-language:    Haskell2010
@@ -123,5 +132,16 @@ executable transcode
     build-depends:  ffmpeg-light
   hs-source-dirs:   demo
   main-is:          Transcode.hs
+  default-language: Haskell2010
+  ghc-options:      -Wall
+
+executable audio
+  if !flag(BuildAudioDemo)
+    buildable:      False
+  build-depends:    base < 5
+  if flag(BuildAudioDemo)
+    build-depends:  ffmpeg-light, mtl, vector
+  hs-source-dirs:   demo
+  main-is:          Audio.hs
   default-language: Haskell2010
   ghc-options:      -Wall
