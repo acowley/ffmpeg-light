@@ -1,17 +1,17 @@
 module Codec.FFmpeg.Resampler where
 
-import Codec.FFmpeg.Common
-import Codec.FFmpeg.Enums
-import Codec.FFmpeg.Types
-import Control.Concurrent.STM.TChan
-import Control.Monad.STM
-import Control.Monad (when, void)
-import Foreign.C.String
-import Foreign.C.Types
-import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
-import Foreign.Ptr
-import Foreign.Storable
+import           Codec.FFmpeg.Common
+import           Codec.FFmpeg.Enums
+import           Codec.FFmpeg.Types
+import           Control.Concurrent.STM.TChan
+import           Control.Monad                (void, when)
+import           Control.Monad.STM
+import           Foreign.C.String
+import           Foreign.C.Types
+import           Foreign.Marshal.Alloc
+import           Foreign.Marshal.Array
+import           Foreign.Ptr
+import           Foreign.Storable
 
 foreign import ccall "swr_get_delay"
   swr_get_delay :: SwrContext -> CLong -> IO CLong
@@ -25,18 +25,17 @@ foreign import ccall "swr_get_out_samples"
 
 data AudioOpts = AudioOpts
   { aoChannelLayout :: CULong
-  , aoSampleRate :: CInt
-  , aoSampleFormat :: AVSampleFormat
+  , aoSampleRate    :: CInt
+  , aoSampleFormat  :: AVSampleFormat
   }
 
 makeResampler :: AVCodecContext
               -> AudioOpts
               -> AudioOpts
-              -> IO (AVFrame -> IO (), IO (Maybe AVFrame), IO ())
+              -> IO (AVFrame -> IO (), IO (Maybe AVFrame))
 makeResampler ctx inOpts outOpts = do
   swr <- initSwrContext inOpts outOpts
 
-  -- fifo <- av_audio_fifo_alloc (aoSampleFormat outOpts) (aoChannelCount outOpts) 1
   frameChan <- newTChanIO
 
   let writeFrame frame = do
@@ -51,15 +50,10 @@ makeResampler ctx inOpts outOpts = do
                             (fromIntegral (aoSampleRate outOpts))
                             (fromIntegral srcRate) avRoundUp
                 srcData = castPtr (hasFrameData frame)
-            putStrLn "alloc"
             dstDataPtr <- malloc
             lineSize <- malloc
             dstChannelCount <- av_get_channel_layout_nb_channels
                 (aoChannelLayout outOpts)
-            putStrLn $ "channel count : " ++ show dstChannelCount
-            putStrLn $ "samples : " ++ show dstSamples
-            putStrLn $ "sample fmt : " ++ show (getSampleFormatInt
-                                                (aoSampleFormat outOpts))
             runWithError "Could not alloc samples"
                 (av_samples_alloc_array_and_samples dstDataPtr lineSize
                 dstChannelCount (fromIntegral dstSamples)
@@ -74,30 +68,16 @@ makeResampler ctx inOpts outOpts = do
                   if outSamples < frameSize * dstChannelCount
                      then return ()
                      else do
-
-                       putStrLn "alloc frame"
                        frame <- allocAudioFrame ctx
-                       putStrLn "convert"
                        outSamples <- swr_convert swr (castPtr $ hasFrameData frame)
                                                      frameSize nullPtr 0
 
-                       putStrLn "write tchan"
                        atomically $ writeTChan frameChan frame
-                       {-
-                       sz <- av_audio_fifo_size fifo
-                       runWithError "Could not reallocate FIFO"
-                           (av_audio_fifo_realloc fifo (sz + fromIntegral dstSamples))
-                       putStrLn "write"
-                       runWithError "Could not write data to FIFO"
-                           (av_audio_fifo_write fifo (castPtr dstData)
-                            (fromIntegral dstSamples))
-                       -}
                        convertLoop
 
             convertLoop
             free dstData
             free lineSize
-            putStrLn "ret"
             return ()
 
       allocAudioFrame :: AVCodecContext -> IO AVFrame
@@ -122,28 +102,10 @@ makeResampler ctx inOpts outOpts = do
       readFrame = do
         mFrame <- atomically $ tryReadTChan frameChan
         case mFrame of
-          Nothing -> putStrLn "nothing" >> return Nothing
-          Just _ -> putStrLn "frame" >> return mFrame
-        {-
-        frameSize <- getFrameSize ctx
-        sz <- av_audio_fifo_size fifo
-        if sz < frameSize
-          then return Nothing
-          else do
-            putStrLn "alloc frame"
-            frame <- allocAudioFrame ctx
-            putStrLn "fifo read"
-            runWithError "Falied to read from FIFO"
-                (av_audio_fifo_read fifo (castPtr (hasFrameData frame)) frameSize)
-            putStrLn "ret frame"
-            return $ Just frame
-        -}
+          Nothing -> return Nothing
+          Just _  -> return mFrame
 
-      cleanup = do
-        -- av_audio_fifo_free fifo
-        return ()
-
-  return (writeFrame, readFrame, cleanup)
+  return (writeFrame, readFrame)
 
 initSwrContext :: AudioOpts -> AudioOpts -> IO SwrContext
 initSwrContext inOpts outOpts = do
