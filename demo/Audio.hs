@@ -20,7 +20,6 @@ main = do initFFmpeg
           case args of
             [fname, outname] -> do
               eRes <- runExceptT $ frameAudioReader (File fname)
-              putStrLn "here"
               case eRes of
                 Left er -> error er
                 Right (as, getFrame, cleanup) -> do
@@ -37,15 +36,12 @@ main = do initFFmpeg
                                   }
                       outOpts = AudioOpts
                                   { aoChannelLayout = asChannelLayout as
-                                  , aoSampleRate = 44100 -- asSampleRate as
+                                  , aoSampleRate = 44100
                                   , aoSampleFormat = asSampleFormat as
-                                    -- avSampleFmtS16p
                                   }
                       encParams = JustAudio outOpts
-                  putStrLn "writer"
                   (_, (ctx, audioWriter)) <- frameWriter encParams outname
-                  (sendFrame, getResampledFrame, cleanupResampler) <-
-                        makeResampler ctx inOpts outOpts
+                  (sendFrame, getResampledFrame) <- makeResampler ctx inOpts outOpts
                   let go i = do
                         mFrame <- getFrame
                         case mFrame of
@@ -59,17 +55,13 @@ main = do initFFmpeg
                         case mFrame of
                           Nothing -> return ()
                           Just frame -> do
-                            putStrLn "audio writer"
                             fs <- getNumSamples frame
-                            putStrLn $ "frame size : " ++ show fs
                             audioWriter (Just frame)
-                            putStrLn "after"
                             readAndWrite
                   go 1
                   audioWriter Nothing
 
                   cleanup
-                  cleanupResampler
                   return ()
               return ()
             _ -> error $ concat usage

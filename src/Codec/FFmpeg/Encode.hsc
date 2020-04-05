@@ -213,7 +213,7 @@ initAudioStream :: AudioOpts
 initAudioStream opts oc = do
   codecId <- getAudioCodecID =<< getOutputFormat oc
   cod <- avcodec_find_encoder codecId
-  when (getPtr cod == nullPtr) (error "Could not find audio codec")
+  when (getPtr cod == nullPtr) (avError "Could not find audio codec")
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
@@ -224,34 +224,11 @@ initAudioStream opts oc = do
   setSampleFormat ctx (aoSampleFormat opts)
   setSampleRate ctx (aoSampleRate opts)
 
-  supportedSampleRates <- getSupportedSampleRates cod
-  let iterSupported suppPtr =
-        if suppPtr == nullPtr
-          then return False
-          else do
-            sr <- peek suppPtr
-            if sr == aoSampleRate opts
-              then return True
-              else iterSupported (advancePtr suppPtr 1)
-  found <- iterSupported supportedSampleRates
-  if found
-    then putStrLn "Found supported sample rate"
-    else error "Could not find supported sample rate"
+  supportedSampleRates <- listSupportedSampleFormats cod
+  let found = not (null supportedSampleRates)
+  when (not found) $ avError "Could not find supported sample rate"
 
-  let channelLayout = aoChannelLayout opts
-  setChannelLayout ctx channelLayout
-  {-
-  channels <- getChannelLayouts cod
-  let iterChannels chanPtr =
-        if chanPtr == nullPtr
-          then return False
-          else do
-            cl <- peek chanPtr
-            putStrLn $ "Channel layouts : " ++ show cl
-            if cl == channelLayout
-              then return Tru
-  -}
-  -- setChannels ctx =<< av_get_channel_layout_nb_channels channelLayout
+  setChannelLayout ctx (aoChannelLayout opts)
 
   setTimeBase st (AVRational 1 (aoSampleRate opts))
   return (st, cod, ctx)
@@ -531,17 +508,6 @@ frameWriter ep fname = do
 
             runWithError "Could not open audio codec" (open_codec ctx codec nullPtr)
 
-            fmts <- getSampleFormats codec
-            let print p = do
-                  v <- peek p
-                  if getSampleFormatInt v < 0
-                    then return ()
-                    else do
-                      putStrLn $ "Supported : " ++ show (getSampleFormatInt v)
-                      print (advancePtr p 1)
-            print fmts
-            -- _ <- getChar
-
             frameNum <- newIORef (0::Int)
 
             let writeAudioFrame :: Maybe AVFrame -> IO ()
@@ -553,7 +519,6 @@ frameWriter ep fname = do
                   numSamples <- getNumSamples frame
                   sampleRate <- getSampleRate ctx
 
-                  putStrLn "Make writeable"
                   runWithError "Error making frame writable"
                       (av_frame_make_writable frame)
 
@@ -562,13 +527,10 @@ frameWriter ep fname = do
                   let samplesCount = av_rescale_q (fromIntegral onGoingSampleCount)
                                               (AVRational 1 sampleRate) timeBase
                   setPts frame samplesCount
-                  putStrLn $ "samples count : " ++ show samplesCount
                   modifyIORef frameNum (+ fromIntegral numSamples)
 
-                  putStrLn "packet"
                   pkt <- av_packet_alloc
                   gotFrame <- malloc
-                  putStrLn "encode"
                   runWithError "Error encoding audio"
                       (avcodec_encode_audio2 ctx pkt frame gotFrame)
                   success <- peek gotFrame
@@ -576,11 +538,9 @@ frameWriter ep fname = do
                       timeBase2 <- getTimeBase st
                       packet_rescale_ts pkt timeBase timeBase2
                       setStreamIndex pkt =<< getStreamIndex st
-                      putStrLn "writing"
                       runWithError "Error while writing audio frame"
                                    (av_interleaved_write_frame oc pkt)
                       return ()
-                  putStrLn "done"
                   free gotFrame
             return (ctx, writeAudioFrame)
           else

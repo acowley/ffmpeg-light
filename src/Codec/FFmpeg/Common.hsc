@@ -11,8 +11,9 @@ import           Control.Monad.Trans.Maybe
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.Marshal.Alloc     (allocaBytes, free)
-import           Foreign.Marshal.Array     (mallocArray)
+import           Foreign.Marshal.Array     (advancePtr, mallocArray)
 import           Foreign.Ptr
+import           Foreign.Storable
 
 foreign import ccall "avcodec_open2"
   open_codec :: AVCodecContext -> AVCodec -> Ptr AVDictionary -> IO CInt
@@ -277,3 +278,30 @@ stringError err =
     peekCString buf
   where
     len = 1000
+
+walkPtrs :: Storable a => Ptr a -> (Ptr a -> IO Bool) -> IO [a]
+walkPtrs ptr isDone = do
+  d <- isDone ptr
+  if d
+    then return []
+    else do
+      v <- peek ptr
+      rest <- walkPtrs (advancePtr ptr 1) isDone
+      return $ v : rest
+
+listSupportedSampleFormats :: AVCodec -> IO [AVSampleFormat]
+listSupportedSampleFormats codec = do
+  fmts <- getSampleFormats codec
+  walkPtrs fmts (\p -> do v <- peek p
+                          return $ getSampleFormatInt v < 0
+                )
+
+listSupportedChannelLayouts :: AVCodec -> IO [CULong]
+listSupportedChannelLayouts codec = do
+  chanPtr <- getChannelLayouts codec
+  walkPtrs chanPtr (return . (==) nullPtr)
+
+listSupportedSampleRates :: AVCodec -> IO [CInt]
+listSupportedSampleRates codec = do
+  srPtr <- getSupportedSampleRates codec
+  walkPtrs srPtr (return . (==) nullPtr)
