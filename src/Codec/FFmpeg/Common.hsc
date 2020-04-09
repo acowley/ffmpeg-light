@@ -78,8 +78,17 @@ foreign import ccall "av_opt_set_sample_fmt"
 foreign import ccall "av_opt_get_sample_fmt"
   av_opt_get_sample_fmt :: Ptr () -> CString -> CInt -> Ptr AVSampleFormat -> IO CInt
 
-foreign import ccall "avcodec_encode_audio2"
-  avcodec_encode_audio2 :: AVCodecContext -> AVPacket -> AVFrame -> Ptr CInt -> IO CInt
+foreign import ccall "avcodec_send_frame"
+  avcodec_send_frame :: AVCodecContext -> AVFrame -> IO CInt
+
+foreign import ccall "avcodec_receive_packet"
+  avcodec_receive_packet :: AVCodecContext -> AVPacket -> IO CInt
+
+foreign import ccall "av_get_channel_name"
+  av_get_channel_name :: CULong -> IO CString
+
+foreign import ccall "av_get_channel_description"
+  av_get_channel_description :: CULong -> IO CString
 
 -- Return size of buffer for image.
 foreign import ccall "av_image_get_buffer_size"

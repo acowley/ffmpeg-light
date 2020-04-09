@@ -133,6 +133,7 @@ data VideoParams = VideoParams
   -- from the output file name. If 'Just', the string value
   -- should be the one available in @ffmpeg -formats@.
   }
+-- TODO: epFormatName should probably be moved to top level EncodingParams
 
 withVideoParams :: EncodingParams -> a -> (VideoParams -> a) -> a
 withVideoParams (JustVideo vp) _ f = f vp
@@ -254,14 +255,17 @@ initTempFrame vp fmt = do
 
 -- | Allocate an output context inferring the codec from the given
 -- file name.
--- TODO: bring back in format name
-allocOutputContext :: FilePath -> IO AVFormatContext
-allocOutputContext fname = do
+allocOutputContext :: Maybe String -> FilePath -> IO AVFormatContext
+allocOutputContext outputFormat fname = do
+  let withFormat = case outputFormat of
+        Just f -> withCString f
+        Nothing -> (\f -> f nullPtr)
   oc <- alloca $ \ocTmp -> do
         r <- withCString fname $ \fname' ->
-                avformat_alloc_output_context2
-                  ocTmp (AVOutputFormat nullPtr)
-                  nullPtr fname'
+                withFormat $ \format ->
+                  avformat_alloc_output_context2
+                    ocTmp (AVOutputFormat nullPtr)
+                    format fname'
         when (r < 0)
               (error "Couldn't allocate output format context")
         peek ocTmp
@@ -363,9 +367,14 @@ frameWriter :: EncodingParams -> FilePath
                   , (AVCodecContext, Maybe AVFrame -> IO ())
                   )
 frameWriter ep fname = do
-  oc <- allocOutputContext fname
+  let outputFormat = case ep of
+                       JustVideo vp -> epFormatName vp
+                       Video vp _ -> epFormatName vp
+                       _ -> Nothing
+  oc <- allocOutputContext outputFormat fname
   outputFormat <- getOutputFormat oc
   audioCodecId <- getAudioCodecID outputFormat
+  pkt <- av_packet_alloc
 
   let initializeVideo :: VideoParams -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
       initializeVideo vp = do
@@ -509,9 +518,22 @@ frameWriter ep fname = do
             runWithError "Could not open audio codec" (open_codec ctx codec nullPtr)
 
             frameNum <- newIORef (0::Int)
+            timeBase <- getTimeBase ctx
 
-            let writeAudioFrame :: Maybe AVFrame -> IO ()
-                writeAudioFrame Nothing = write_trailer_check oc
+            let read_pkts = do
+                  ret <- avcodec_receive_packet ctx pkt
+                  -- TODO: Distinguish between temp and permanent errors with EAGAIN
+                  if ret /= 0
+                    then return ()
+                    else do
+                      timeBase2 <- getTimeBase st
+                      packet_rescale_ts pkt timeBase timeBase2
+                      setStreamIndex pkt =<< getStreamIndex st
+                      runWithError "Error while writing audio frame"
+                                  (av_interleaved_write_frame oc pkt)
+                      return ()
+                writeAudioFrame :: Maybe AVFrame -> IO ()
+                writeAudioFrame Nothing = read_pkts >> write_trailer_check oc
                 writeAudioFrame (Just frame) = writeAudioFrame' frame
 
                 writeAudioFrame' :: AVFrame -> IO ()
@@ -519,29 +541,15 @@ frameWriter ep fname = do
                   numSamples <- getNumSamples frame
                   sampleRate <- getSampleRate ctx
 
-                  runWithError "Error making frame writable"
-                      (av_frame_make_writable frame)
-
-                  timeBase <- getTimeBase ctx
                   onGoingSampleCount <- readIORef frameNum
                   let samplesCount = av_rescale_q (fromIntegral onGoingSampleCount)
                                               (AVRational 1 sampleRate) timeBase
                   setPts frame samplesCount
                   modifyIORef frameNum (+ fromIntegral numSamples)
 
-                  pkt <- av_packet_alloc
-                  gotFrame <- malloc
                   runWithError "Error encoding audio"
-                      (avcodec_encode_audio2 ctx pkt frame gotFrame)
-                  success <- peek gotFrame
-                  when (success == 1) $ do
-                      timeBase2 <- getTimeBase st
-                      packet_rescale_ts pkt timeBase timeBase2
-                      setStreamIndex pkt =<< getStreamIndex st
-                      runWithError "Error while writing audio frame"
-                                   (av_interleaved_write_frame oc pkt)
-                      return ()
-                  free gotFrame
+                      (avcodec_send_frame ctx frame)
+                  read_pkts
             return (ctx, writeAudioFrame)
           else
             return (undefined, \_ -> return ())
