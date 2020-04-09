@@ -54,8 +54,8 @@ flag BuildTranscodeDemo
   default:     False
   manual:      True
 
-flag BuildAudioDemo
-  description: Build audio demo executable
+flag BuildAudioExtractDemo
+  description: Build audio-extract demo executable
   default:     False
   manual:      True
 
@@ -135,13 +135,13 @@ executable transcode
   default-language: Haskell2010
   ghc-options:      -Wall
 
-executable audio
-  if !flag(BuildAudioDemo)
+executable audio-extract
+  if !flag(BuildAudioExtractDemo)
     buildable:      False
   build-depends:    base < 5
-  if flag(BuildAudioDemo)
+  if flag(BuildAudioExtractDemo)
     build-depends:  ffmpeg-light, mtl, vector
   hs-source-dirs:   demo
-  main-is:          Audio.hs
+  main-is:          AudioExtract.hs
   default-language: Haskell2010
   ghc-options:      -Wall

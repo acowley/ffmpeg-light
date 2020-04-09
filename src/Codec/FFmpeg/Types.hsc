@@ -156,7 +156,7 @@ newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #mkField Pts, CLong
 #mkField PktPts, CLong
 #mkField LineSize, CInt
-#mkField FrameData, (Ptr (Ptr ()))
+#mkField Data, (Ptr (Ptr ()))
 #mkField ExtendedData, (Ptr (Ptr ()))
 #mkField NumSamples, CInt
 #mkField Format, CInt
@@ -168,7 +168,7 @@ newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFrame, LineSize, linesize
 #hasField AVFrame, Pts, pts
 #hasField AVFrame, PktPts, pkt_pts
-#hasField AVFrame, FrameData, data
+#hasField AVFrame, Data, data
 #hasField AVFrame, ExtendedData, extended_data
 #hasField AVFrame, NumSamples, nb_samples
 #hasField AVFrame, Format, format
@@ -214,12 +214,12 @@ newtype Category = Category CInt deriving (Eq,Ord,Show,Read,Enum)
 newtype AVIOContext = AVIOContext (Ptr ()) deriving (Storable, HasPtr)
 
 newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
-#mkField Data, (Ptr ())
+#mkField PktData, (Ptr ())
 #mkField Size, CInt
 #mkField PacketFlags, PacketFlag
 #mkField Dts, CLong
 
-#hasField AVPacket, Data, data
+#hasField AVPacket, PktData, data
 #hasField AVPacket, Size, size
 #hasField AVPacket, PacketFlags, flags
 #hasField AVPacket, StreamIndex, stream_index

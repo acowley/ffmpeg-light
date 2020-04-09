@@ -252,7 +252,7 @@ frameCopyToBuffer frame buffer =
 
     MaybeT $ do
 
-      let imageData = hasFrameData frame
+      let imageData = hasData frame
           lineSize  = hasLineSize frame
 
       fmt <- getPixelFormat frame

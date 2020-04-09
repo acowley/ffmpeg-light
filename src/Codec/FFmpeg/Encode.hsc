@@ -424,14 +424,14 @@ frameWriter ep fname = do
                        | otherwise =  Nothing
             frameTime = av_rescale_q 1 framePeriod tb
             resetPacket = do init_packet pkt
-                             setData pkt nullPtr
+                             setPktData pkt nullPtr
                              setSize pkt 0
             writePacket = do setStreamIndex pkt stIndex
                              write_frame_check oc pkt
 
             copyDstData (_,_,pixels) =
               void . V.unsafeWith pixels $ \ptr ->
-                av_image_fill_arrays (castPtr $ hasFrameData dstFrame)
+                av_image_fill_arrays (castPtr $ hasData dstFrame)
                                     (hasLineSize dstFrame)
                                     (castPtr ptr)
                                     dstFmt

@@ -14,7 +14,7 @@ flags:
     BuildRasterDemo: true
     BuildVPlayDemo: true
     BuildTranscodeDemo: true
-    BuildAudioDemo: true
+    BuildAudioExtractDemo: true
 
 # Extra package databases containing global packages
 extra-package-dbs: []
