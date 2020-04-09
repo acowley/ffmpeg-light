@@ -49,7 +49,7 @@ makeResampler ctx inOpts outOpts = do
                             (delay + fromIntegral srcSamples)
                             (fromIntegral (aoSampleRate outOpts))
                             (fromIntegral srcRate) avRoundUp
-                srcData = castPtr (hasFrameData frame)
+                srcData = castPtr (hasData frame)
             dstDataPtr <- malloc
             lineSize <- malloc
             dstChannelCount <- av_get_channel_layout_nb_channels
@@ -69,7 +69,7 @@ makeResampler ctx inOpts outOpts = do
                      then return ()
                      else do
                        frame <- allocAudioFrame ctx
-                       outSamples <- swr_convert swr (castPtr $ hasFrameData frame)
+                       outSamples <- swr_convert swr (castPtr $ hasData frame)
                                                      frameSize nullPtr 0
 
                        atomically $ writeTChan frameChan frame

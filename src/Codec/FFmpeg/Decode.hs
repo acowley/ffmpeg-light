@@ -297,9 +297,9 @@ prepareAudioReader fmtCtx audStream codCtx =
                     then return ()
                     else do
                       sz <- getSize pkt
-                      dt <- getData pkt
+                      dt <- getPktData pkt
                       setSize pkt (sz-len)
-                      setData pkt (advancePtr dt (fromIntegral len))
+                      setPktData pkt (advancePtr dt (fromIntegral len))
                       endSize <- getSize pkt
                       if endSize <= 0 then return () else decode_func
             decode_func

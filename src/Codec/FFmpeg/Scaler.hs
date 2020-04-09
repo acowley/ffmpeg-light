@@ -45,7 +45,7 @@ class SwsCompatible a where
   sliceHeight :: a -> (CInt -> IO r) -> IO r
 
 instance SwsCompatible AVFrame where
-  swsPlanes frame k = k (castPtr $ hasFrameData frame)
+  swsPlanes frame k = k (castPtr $ hasData frame)
   swsStrides frame k = k (hasLineSize frame)
   sliceHeight frame k = getHeight frame >>= k
 
