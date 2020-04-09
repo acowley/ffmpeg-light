@@ -59,6 +59,11 @@ flag BuildAudioExtractDemo
   default:     False
   manual:      True
 
+flag BuildAudioSinDemo
+  description: Build audio-sin demo executable
+  default:     False
+  manual:      True
+
 library
   exposed-modules:     Codec.FFmpeg,
                        Codec.FFmpeg.AudioStream,
@@ -143,5 +148,16 @@ executable audio-extract
     build-depends:  ffmpeg-light, mtl, vector
   hs-source-dirs:   demo
   main-is:          AudioExtract.hs
+  default-language: Haskell2010
+  ghc-options:      -Wall
+
+executable audio-sin
+  if !flag(BuildAudioSinDemo)
+    buildable:      False
+  build-depends:    base < 5
+  if flag(BuildAudioSinDemo)
+    build-depends:  ffmpeg-light, mtl, vector
+  hs-source-dirs:   demo
+  main-is:          AudioSin.hs
   default-language: Haskell2010
   ghc-options:      -Wall
