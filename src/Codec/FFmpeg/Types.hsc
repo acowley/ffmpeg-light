@@ -313,6 +313,9 @@ av_rescale_q a bq cq = av_rescale_rnd a b c avRoundNearInf
 foreign import ccall "av_packet_rescale_ts"
   av_packet_rescale_ts :: AVPacket -> Ptr AVRational -> Ptr AVRational -> IO ()
 
+foreign import ccall "av_packet_unref"
+  av_packet_unref :: AVPacket -> IO ()
+
 packet_rescale_ts :: AVPacket -> AVRational -> AVRational -> IO ()
 packet_rescale_ts packet rat1 rat2 = do
   ptr1 <- malloc
@@ -320,17 +323,6 @@ packet_rescale_ts packet rat1 rat2 = do
   poke ptr1 rat1
   poke ptr2 rat2
   av_packet_rescale_ts packet ptr1 ptr2
-
-{-
-foreign import ccall "log_packet"
-  log_packet :: AVFormatContext -> AVPacket -> IO ()
-
-foreign import ccall "print_av_frame"
-  print_av_frame :: AVFrame -> IO ()
-
-foreign import ccall "print_data"
-  print_data :: Ptr (Ptr CUChar) -> IO ()
--}
 
 
 #if LIBAVFORMAT_VERSION_MAJOR < 57
