@@ -82,12 +82,16 @@ main = do
     case args of
       [fname] -> do
         initFFmpeg
-        let outOpts = AudioOpts
-                        { aoChannelLayout = avChLayoutMono
-                        , aoSampleRate = 44100
-                        , aoSampleFormat = avSampleFmtS16p
+        let outParams = AudioParams
+                        { apChannelLayout = avChLayoutMono
+                        , apSampleRate = 44100
+                        , apSampleFormat = avSampleFmtS16p
                         }
-            encParams = JustAudio outOpts
+            encParams = EncodingParams
+                          { epCodec = Nothing
+                          , epFormatName = Nothing
+                          , epStreamParams = JustAudio outParams
+                          }
         (_, (ctx, audioWriter)) <- frameWriter encParams fname
         frame <- frame_alloc_check
         setNumSamples frame =<< getFrameSize ctx
@@ -97,7 +101,7 @@ main = do
         ret <- av_frame_get_buffer frame 0
         when (ret < 0) (error "alloc buffers")
 
-        let sampleRate = aoSampleRate outOpts
+        let sampleRate = apSampleRate outParams
 
         forM_ [0..120] $ \i -> do
           av_frame_make_writable frame

@@ -23,18 +23,18 @@ foreign import ccall "swr_convert"
 foreign import ccall "swr_get_out_samples"
   swr_get_out_samples :: SwrContext -> CInt -> IO CInt
 
-data AudioOpts = AudioOpts
-  { aoChannelLayout :: CULong
-  , aoSampleRate    :: CInt
-  , aoSampleFormat  :: AVSampleFormat
+data AudioParams = AudioParams
+  { apChannelLayout :: CULong
+  , apSampleRate    :: CInt
+  , apSampleFormat  :: AVSampleFormat
   }
 
 makeResampler :: AVCodecContext
-              -> AudioOpts
-              -> AudioOpts
+              -> AudioParams
+              -> AudioParams
               -> IO (AVFrame -> IO (), IO (Maybe AVFrame))
-makeResampler ctx inOpts outOpts = do
-  swr <- initSwrContext inOpts outOpts
+makeResampler ctx inParams outParams = do
+  swr <- initSwrContext inParams outParams
 
   frameChan <- newTChanIO
 
@@ -47,17 +47,17 @@ makeResampler ctx inOpts outOpts = do
             delay <- swr_get_delay swr (fromIntegral srcRate)
             let dstSamples = av_rescale_rnd
                             (delay + fromIntegral srcSamples)
-                            (fromIntegral (aoSampleRate outOpts))
+                            (fromIntegral (apSampleRate outParams))
                             (fromIntegral srcRate) avRoundUp
                 srcData = castPtr (hasData frame)
             dstDataPtr <- malloc
             lineSize <- malloc
             dstChannelCount <- av_get_channel_layout_nb_channels
-                (aoChannelLayout outOpts)
+                (apChannelLayout outParams)
             runWithError "Could not alloc samples"
                 (av_samples_alloc_array_and_samples dstDataPtr lineSize
                 dstChannelCount (fromIntegral dstSamples)
-                (aoSampleFormat outOpts) 0)
+                (apSampleFormat outParams) 0)
             dstData <- peek dstDataPtr
             runWithError "Error converting samples"
                 (swr_convert swr nullPtr 0 srcData srcSamples)
@@ -107,8 +107,8 @@ makeResampler ctx inOpts outOpts = do
 
   return (writeFrame, readFrame)
 
-initSwrContext :: AudioOpts -> AudioOpts -> IO SwrContext
-initSwrContext inOpts outOpts = do
+initSwrContext :: AudioParams -> AudioParams -> IO SwrContext
+initSwrContext inParams outParams = do
   swr <- swr_alloc
   when (getPtr swr == nullPtr) (error "Could not allocate resampler context")
   let set_int str i = do
@@ -120,14 +120,14 @@ initSwrContext inOpts outOpts = do
         av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
         free cStr
 
-  -- set_int "in_channel_count" (aoChannelCount inOpts)
-  set_int "in_channel_layout" (aoChannelLayout inOpts)
-  set_int "in_sample_rate" (aoSampleRate inOpts)
-  set_sample_fmt "in_sample_fmt" (aoSampleFormat inOpts)
-  -- set_int "out_channel_count" (aoChannelCount outOpts)
-  set_int "out_channel_layout" (aoChannelLayout inOpts)
-  set_int "out_sample_rate" (aoSampleRate outOpts)
-  set_sample_fmt "out_sample_fmt" (aoSampleFormat outOpts)
+  -- set_int "in_channel_count" (aoChannelCount inParams)
+  set_int "in_channel_layout" (apChannelLayout inParams)
+  set_int "in_sample_rate" (apSampleRate inParams)
+  set_sample_fmt "in_sample_fmt" (apSampleFormat inParams)
+  -- set_int "out_channel_count" (aoChannelCount outParams)
+  set_int "out_channel_layout" (apChannelLayout inParams)
+  set_int "out_sample_rate" (apSampleRate outParams)
+  set_sample_fmt "out_sample_fmt" (apSampleFormat outParams)
 
   void $ runWithError "Failed to initialize the resampling context" (swr_init swr)
 

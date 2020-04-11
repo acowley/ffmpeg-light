@@ -16,7 +16,7 @@ firstFrame = do initFFmpeg
 -- | Generate a video that pulses from light to dark.
 pulseVid :: IO ()
 pulseVid =
-  do boom <- imageWriter (JustVideo (defaultParams sz sz)) "pulse.mov"
+  do boom <- imageWriter (defaultParams sz sz) "pulse.mov"
      let boom' = (boom :: Maybe (Image Pixel8) -> IO ())  . Just . Image sz sz
          go :: Int -> Int -> Int -> IO ()
          go 600 _ _ = boom Nothing
@@ -74,7 +74,7 @@ testCamera =
      case frame1 of
        img@(Just (Image w h _)) ->
          do let [w',h'] = map fromIntegral [w,h]
-            writeFrame <- imageWriter (JustVideo (defaultParams w' h')) "camera.mov"
+            writeFrame <- imageWriter (defaultParams w' h') "camera.mov"
             writeFrame (img :: Maybe (Image PixelRGB8))
             let go = getFrame >>= writeFrame
             loopFor 10 go

@@ -29,19 +29,23 @@ main = do initFFmpeg
                       show (getSampleFormatInt (asSampleFormat as))
                   putStrLn $ "channel layout : " ++ show (asChannelLayout as)
                   putStrLn $ "channel count : " ++ show (asChannelCount as)
-                  let inOpts = AudioOpts
-                                  { aoChannelLayout = asChannelLayout as
-                                  , aoSampleRate = asSampleRate as
-                                  , aoSampleFormat = asSampleFormat as
+                  let inParams = AudioParams
+                                  { apChannelLayout = asChannelLayout as
+                                  , apSampleRate = asSampleRate as
+                                  , apSampleFormat = asSampleFormat as
                                   }
-                      outOpts = AudioOpts
-                                  { aoChannelLayout = asChannelLayout as
-                                  , aoSampleRate = 44100
-                                  , aoSampleFormat = asSampleFormat as
+                      outParams = AudioParams
+                                  { apChannelLayout = asChannelLayout as
+                                  , apSampleRate = 44100
+                                  , apSampleFormat = asSampleFormat as
                                   }
-                      encParams = JustAudio outOpts
+                      encParams = EncodingParams
+                                    { epCodec = Nothing
+                                    , epFormatName = Nothing
+                                    , epStreamParams = JustAudio outParams
+                                    }
                   (_, (ctx, audioWriter)) <- frameWriter encParams outname
-                  (sendFrame, getResampledFrame) <- makeResampler ctx inOpts outOpts
+                  (sendFrame, getResampledFrame) <- makeResampler ctx inParams outParams
                   let go i = do
                         mFrame <- getFrame
                         case mFrame of

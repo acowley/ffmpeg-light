@@ -102,25 +102,34 @@ foreign import ccall "av_frame_make_writable"
 
 -- * FFmpeg Encoding Interface
 
--- | Minimal parameters describing the desired video output.
-data EncodingParams =
-    JustVideo VideoParams
-  | JustAudio AudioOpts
-  | Video VideoParams AudioOpts
-
-data VideoParams = VideoParams
-  { epWidth  :: CInt
-  , epHeight :: CInt
-  , epFps    :: Int
-  , epCodec  :: Maybe AVCodecID
+-- | Minimal parameters describing the desired media output.
+data EncodingParams = EncodingParams
+  { epCodec  :: Maybe AVCodecID
   -- ^ If 'Nothing', then the codec is inferred from
   -- the output file name. If 'Just', then this codec
   -- is manually chosen.
-  , epPixelFormat :: Maybe AVPixelFormat
+  , epFormatName :: Maybe String
+  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
+  -- from the output file name. If 'Just', the string value
+  -- should be the one available in @ffmpeg -formats@.
+  , epStreamParams :: StreamParams
+  -- ^ Encoding parameters for video, audio, or both
+  }
+
+data StreamParams =
+    JustVideo VideoParams
+  | JustAudio AudioParams
+  | AudioVideo AudioParams VideoParams
+
+data VideoParams = VideoParams
+  { vpWidth  :: CInt
+  , vpHeight :: CInt
+  , vpFps    :: Int
+  , vpPixelFormat :: Maybe AVPixelFormat
   -- ^ If 'Nothing', automatically chose a pixel format
   -- based on the output codec. If 'Just', force the
   -- selected pixel format.
-  , epPreset :: String
+  , vpPreset :: String
   -- ^ Encoder-specific hints. For h264, the default
   -- preset is @\"medium\"@ (other options are
   -- @\"fast\"@, @\"slow\"@, etc.). For the GIF codec,
@@ -128,27 +137,34 @@ data VideoParams = VideoParams
   -- during the palettization process. This will
   -- improve image quality, but result in a larger
   -- file.
-  , epFormatName :: Maybe String
-  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
-  -- from the output file name. If 'Just', the string value
-  -- should be the one available in @ffmpeg -formats@.
   }
--- TODO: epFormatName should probably be moved to top level EncodingParams
 
 withVideoParams :: EncodingParams -> a -> (VideoParams -> a) -> a
-withVideoParams (JustVideo vp) _ f = f vp
-withVideoParams (Video vp _) _ f = f vp
-withVideoParams _ def _ = def
+withVideoParams ep def f = withVPs (epStreamParams ep)
+  where
+    withVPs (JustVideo vp) = f vp
+    withVPs (AudioVideo _ vp) = f vp
+    withVPs _ = def
 
 -- | Use default parameters for a video of the given width and
 -- height, forcing the choice of the h264 encoder.
 defaultH264 :: CInt -> CInt -> EncodingParams
-defaultH264 w h = JustVideo $ VideoParams w h 30 (Just avCodecIdH264) Nothing "medium" Nothing
+defaultH264 w h =
+  EncodingParams
+    { epCodec = (Just avCodecIdH264)
+    , epFormatName = Nothing
+    , epStreamParams = JustVideo (VideoParams w h 30 Nothing "medium")
+    }
 
 -- | Use default parameters for a video of the given width and
 -- height. The output format is determined by the output file name.
-defaultParams :: CInt -> CInt -> VideoParams
-defaultParams w h = VideoParams w h 30 Nothing Nothing "" Nothing
+defaultParams :: CInt -> CInt -> EncodingParams
+defaultParams w h =
+  EncodingParams
+    { epCodec = Nothing
+    , epFormatName = Nothing
+    , epStreamParams = JustVideo (VideoParams w h 30 Nothing "")
+    }
 
 -- | Determine if the bitwise intersection of two values is non-zero.
 checkFlag :: Bits a => a -> a -> Bool
@@ -157,27 +173,29 @@ checkFlag flg = \x -> (flg .&. x) /= allZeroBits
 
 -- | Find and initialize the requested encoder, and add a video stream
 -- to the output container.
-initStream :: VideoParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
-initStream vp _
-  | (epWidth vp `rem` 2, epHeight vp `rem` 2) /= (0,0) =
+initStream :: Maybe AVCodecID -> VideoParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
+initStream _ vp _
+  | (vpWidth vp `rem` 2, vpHeight vp `rem` 2) /= (0,0) =
     error "Video dimensions must be multiples of two"
-initStream vp oc = do
+initStream codecId vp oc = do
   -- Use the codec suggested by the output format, or override with
   -- the user's choice.
-  codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return (epCodec vp)
+  codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return codecId
   cod <- avcodec_find_encoder codec
   when (getPtr cod == nullPtr)
        (error "Couldn't find encoder")
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
-  let framePeriod = AVRational 1 (fromIntegral $ epFps vp)
+  let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
+      frameRate = AVRational (fromIntegral $ vpFps vp) 1
   setTimeBase st framePeriod
   ctx <- getCodecContext st
-  setWidth ctx (epWidth vp)
-  setHeight ctx (epHeight vp)
+  setWidth ctx (vpWidth vp)
+  setHeight ctx (vpHeight vp)
   setTimeBase ctx framePeriod
-  setPixelFormat ctx $ case epPixelFormat vp of
+  setFrameRate ctx frameRate
+  setPixelFormat ctx $ case vpPixelFormat vp of
                          Just fmt -> fmt
                          Nothing
                            | codec == avCodecIdRawvideo -> avPixFmtRgb24
@@ -198,9 +216,9 @@ initStream vp oc = do
   --        withCString (preset ep) $ \vStr ->
   --          av_opt_set ((#ptr AVCodecContext, priv_data) (getPtr ctx))
   --                     kStr vStr 0
-  when (not . null $ epPreset vp) . void $
+  when (not . null $ vpPreset vp) . void $
     withCString "preset" $ \kStr ->
-      withCString (epPreset vp) $ \vStr ->
+      withCString (vpPreset vp) $ \vStr ->
         getPrivData ctx >>= \pd -> av_opt_set pd kStr vStr 0
 
   rOpen <- open_codec ctx cod nullPtr
@@ -208,7 +226,7 @@ initStream vp oc = do
 
   return (st, ctx)
 
-initAudioStream :: AudioOpts
+initAudioStream :: AudioParams
                 -> AVFormatContext
                 -> IO (AVStream, AVCodec, AVCodecContext)
 initAudioStream opts oc = do
@@ -222,16 +240,16 @@ initAudioStream opts oc = do
   ctx <- getCodecContext st
 
   -- TODO: check that these are valid
-  setSampleFormat ctx (aoSampleFormat opts)
-  setSampleRate ctx (aoSampleRate opts)
+  setSampleFormat ctx (apSampleFormat opts)
+  setSampleRate ctx (apSampleRate opts)
 
   supportedSampleRates <- listSupportedSampleFormats cod
   let found = not (null supportedSampleRates)
   when (not found) $ avError "Could not find supported sample rate"
 
-  setChannelLayout ctx (aoChannelLayout opts)
+  setChannelLayout ctx (apChannelLayout opts)
 
-  setTimeBase st (AVRational 1 (aoSampleRate opts))
+  setTimeBase st (AVRational 1 (apSampleRate opts))
   return (st, cod, ctx)
 
 
@@ -242,13 +260,13 @@ initTempFrame :: VideoParams -> AVPixelFormat -> IO AVFrame
 initTempFrame vp fmt = do
   frame <- frame_alloc_check
   setPixelFormat frame fmt
-  setWidth frame (epWidth vp)
-  setHeight frame (epHeight vp)
+  setWidth frame (vpWidth vp)
+  setHeight frame (vpHeight vp)
   setPts frame 0
 
   -- For palettized images, we will provide our own buffer.
   if fmt == avPixFmtRgb8 || fmt == avPixFmtPal8
-  then do r <- av_image_fill_linesizes (hasLineSize frame) fmt (epWidth vp)
+  then do r <- av_image_fill_linesizes (hasLineSize frame) fmt (vpWidth vp)
           when (r < 0) (error "Error filling temporary frame line sizes")
   else frame_get_buffer_check frame 32
   return frame
@@ -271,10 +289,6 @@ allocOutputContext outputFormat fname = do
         peek ocTmp
   when (getPtr oc == nullPtr)
        (error "Couldn't allocate iutput AVFormatContext")
-  {-
-  withCString fname $ \fname' ->
-    av_dump_format oc 0 fname' 1
-  -}
   return oc
 
 -- | Open the given file for writing.
@@ -329,7 +343,7 @@ palettizeRGB8 vp = \pix -> V.create $
              (V.enumFromN 0 numPix)
      VM.set (VM.unsafeSlice numPix 1024 m) 0
      return m
-  where numPix = fromIntegral $ epWidth vp * epHeight vp
+  where numPix = fromIntegral $ vpWidth vp * vpHeight vp
         pal :: V.Vector (V3 CInt)
         pal = V.generate 256 $ \i' ->
                 let i = fromIntegral i'
@@ -348,8 +362,8 @@ palettizeJuicy vp pix =
       pal' = V.map (\(V3 r g b) -> V4 b g r (255::CUChar))
                   (V.unsafeCast $ imageData pal)
   in V.unsafeCast (imageData pix') V.++ V.unsafeCast pal'
-  where mkImage = Image (fromIntegral $ epWidth vp) (fromIntegral $ epHeight vp)
-        doDither = epPreset vp == "dither"
+  where mkImage = Image (fromIntegral $ vpWidth vp) (fromIntegral $ vpHeight vp)
+        doDither = vpPreset vp == "dither"
 
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write image frames (specified by a pixel
@@ -367,26 +381,22 @@ frameWriter :: EncodingParams -> FilePath
                   , (AVCodecContext, Maybe AVFrame -> IO ())
                   )
 frameWriter ep fname = do
-  let outputFormat = case ep of
-                       JustVideo vp -> epFormatName vp
-                       Video vp _ -> epFormatName vp
-                       _ -> Nothing
+  let outputFormat = epFormatName ep
   oc <- allocOutputContext outputFormat fname
   outputFormat <- getOutputFormat oc
   audioCodecId <- getAudioCodecID outputFormat
-  pkt <- av_packet_alloc
 
   let initializeVideo :: VideoParams -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
       initializeVideo vp = do
-        (st,ctx) <- initStream vp oc
+        (st,ctx) <- initStream (epCodec ep) vp oc
         dstFmt <- getPixelFormat ctx
         dstFrame <- initTempFrame vp dstFmt
-        let dstInfo = ImageInfo (epWidth vp) (epHeight vp) dstFmt
+        let dstInfo = ImageInfo (vpWidth vp) (vpHeight vp) dstFmt
 
         -- Initialize the scaler that we use to convert RGB -> dstFmt
         -- Note that libswscaler does not support Pal8 as an output format.
         sws <- if dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8
-              then swsInit (ImageInfo (epWidth vp) (epHeight vp) avPixFmtRgb24)
+              then swsInit (ImageInfo (vpWidth vp) (vpHeight vp) avPixFmtRgb24)
                             dstInfo swsBilinear
                     >>= fmap Just . newIORef
               else return Nothing
@@ -401,7 +411,10 @@ frameWriter ep fname = do
         -- the first one since we want the first frame PTS to be zero.
         frameNum <- newIORef (0::Int)
 
-        let framePeriod = AVRational 1 (fromIntegral $ epFps vp)
+        let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
+        fps <- getFps ctx
+        print ("framePeriod", framePeriod)
+        print ("fps", fps)
 
           -- The stream time_base can be changed by the call to
           -- 'write_header_check', so we read it back here to establish a way
@@ -416,8 +429,8 @@ frameWriter ep fname = do
               | dstFmt /= avPixFmtPal8 && dstFmt /= avPixFmtRgb8 = const True
               | otherwise = \(srcFmt, V2 srcW srcH, _) ->
                               srcFmt == avPixFmtRgb24 &&
-                              srcW == epWidth vp &&
-                              srcH == epHeight vp
+                              srcW == vpWidth vp &&
+                              srcH == vpHeight vp
 
             palettizer | dstFmt == avPixFmtPal8 = Just $ palettizeJuicy vp
                        | dstFmt == avPixFmtRgb8 = Just $ palettizeRGB8 vp
@@ -435,8 +448,8 @@ frameWriter ep fname = do
                                     (hasLineSize dstFrame)
                                     (castPtr ptr)
                                     dstFmt
-                                    (epWidth vp)
-                                    (epHeight vp)
+                                    (vpWidth vp)
+                                    (vpHeight vp)
                                     1
 
             scaleToDst sws' img = void $ swsScale sws' img dstFrame
@@ -487,9 +500,10 @@ frameWriter ep fname = do
                                           swsBilinear
                           writeIORef sPtr s'
                           return s'
-                 fillDst sws' (srcFmt, V2 srcW srcH, pixels')
                  timeStamp <- getCurrentFrameTimestamp
+                 print ("pts", timeStamp)
                  setPts dstFrame timeStamp
+                 fillDst sws' (srcFmt, V2 srcW srcH, pixels')
                  encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
                  -- Make sure the GC hasn't clobbered our palettized pixel data
                  let (fp,_,_) = V.unsafeToForeignPtr pixels'
@@ -506,14 +520,15 @@ frameWriter ep fname = do
                             av_free (getPtr pkt)
                             avio_close_check oc
                             avformat_free_context oc
-            go img@(Just _) = addFrame img
+            go img@(Just _) = putStrLn "add frame" >> addFrame img
         return go
 
-      initializeAudio :: AudioOpts -> IO (AVCodecContext, Maybe AVFrame -> IO ())
+      initializeAudio :: AudioParams -> IO (AVCodecContext, Maybe AVFrame -> IO ())
       initializeAudio ap = do
         if audioCodecId /= avCodecIdNone
           then do
             (st, codec, ctx) <- initAudioStream ap oc
+            pkt <- av_packet_alloc
 
             runWithError "Could not open audio codec" (open_codec ctx codec nullPtr)
 
@@ -555,9 +570,9 @@ frameWriter ep fname = do
             return (undefined, \_ -> return ())
 
   videoWriter <- withVideoParams ep (return (\_ -> return ())) initializeVideo
-  audioWriter <- case ep of
-                   JustAudio ap -> initializeAudio ap
-                   Video _ ap -> initializeAudio ap
+  audioWriter <- case epStreamParams ep of
+                   JustAudio ap    -> initializeAudio ap
+                   AudioVideo ap _ -> initializeAudio ap
                    _ -> return (undefined, \_ -> return ())
 
   avio_open_check oc fname
@@ -571,10 +586,12 @@ frameWriter ep fname = do
 -- the provided 'EncodingParams' (i.e. the same resolution as the
 -- output video). If this function is applied to 'Nothing', then the
 -- output stream is closed. Note that 'Nothing' /must/ be provided to
--- properly terminate video encoding.
-frameWriterRgb :: VideoParams -> FilePath
+-- properly terminate video encoding. Throws an error if you do not
+-- provide a 'EncodingParams' without 'VideoParams'
+frameWriterRgb :: EncodingParams -> FilePath
                -> IO (Maybe (Vector CUChar) -> IO ())
-frameWriterRgb vp f = do
-    (videoWriter, _) <- frameWriter (JustVideo vp) f
+frameWriterRgb ep f =
+  withVideoParams ep (avError "You must provide VideoParams") $ \vp -> do
+    let aux pixels = (avPixFmtRgb24, V2 (vpWidth vp) (vpHeight vp), pixels)
+    (videoWriter, _) <- frameWriter ep f
     return $ \pix -> videoWriter (aux <$> pix)
-  where aux pixels = (avPixFmtRgb24, V2 (epWidth vp) (epHeight vp), pixels)
