@@ -1,7 +1,9 @@
+{-# LANGUAGE MultiWayIf #-}
 module Main where
 
 import           Codec.FFmpeg
 import           Codec.FFmpeg.AudioStream
+import Codec.FFmpeg.Juicy
 import           Codec.FFmpeg.Common
 import           Codec.FFmpeg.Decode
 import           Codec.FFmpeg.Encode
@@ -18,6 +20,7 @@ import           Foreign.ForeignPtr
 import           Foreign.Marshal.Array
 import           Foreign.Ptr
 import           Foreign.Storable
+import Codec.Picture
 import Numeric
 import           System.Environment
 
@@ -76,48 +79,76 @@ g7    = combineSounds [ volume 0.23 g4, volume 0.23 a4, volume 0.23 c5, volume 0
 -- ii - V7 - I jazz chord progression
 twoFiveOne = sequenceSounds [(1, dMin7), (1, g7), (1, cMaj7)]
 
+mkImage :: Int -> Int -> PixelRGB8 -> Image PixelRGB8
+mkImage w h color =
+  generateImage (\_ _ -> color) w h
+
 main :: IO ()
 main = do
-    args <- getArgs
-    case args of
-      [fname] -> do
-        initFFmpeg
-        let outParams = AudioParams
-                        { apChannelLayout = avChLayoutMono
-                        , apSampleRate = 44100
-                        , apSampleFormat = avSampleFmtS16p
-                        }
-            encParams = EncodingParams
-                          { epCodec = Nothing
-                          , epFormatName = Nothing
-                          , epStreamParams = JustAudio outParams
-                          }
-        (_, (ctx, audioWriter)) <- frameWriter encParams fname
-        frame <- frame_alloc_check
-        setNumSamples frame =<< getFrameSize ctx
-        setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
-        setChannelLayout frame =<< getChannelLayout ctx
+  initFFmpeg
 
-        ret <- av_frame_get_buffer frame 0
-        when (ret < 0) (error "alloc buffers")
+  let audioParams = AudioParams
+                    { apChannelLayout = avChLayoutMono
+                    , apSampleRate = 44100
+                    , apSampleFormat = avSampleFmtFltp
+                    }
+      w = 1080
+      h = 720
+      videoParams = VideoParams
+                    { vpWidth = w
+                    , vpHeight = h
+                    , vpFps = 30
+                    , vpPixelFormat = Nothing
+                    , vpPreset = ""
+                    }
+      encParams = EncodingParams
+                    { epCodec = Nothing
+                    , epFormatName = Nothing
+                    , epStreamParams = AudioVideo audioParams videoParams
+                    }
+  (_, mCtx, videoWriter, audioWriter) <- frameWriter encParams "sinusoidal.mov"
+  case mCtx of
+    Nothing -> error "Could not get audio ctx"
+    Just ctx -> do
+      frame <- frame_alloc_check
+      numSamples <- getFrameSize ctx
+      setNumSamples frame =<< getFrameSize ctx
+      setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
+      setChannelLayout frame =<< getChannelLayout ctx
+      setSampleRate frame =<< getSampleRate ctx
 
-        let sampleRate = apSampleRate outParams
+      ch <- getChannelLayout ctx
+      numChannels <- getChannels ctx
 
-        forM_ [0..120] $ \i -> do
-          av_frame_make_writable frame
-          dataPtr <- castPtr <$> getData frame :: IO (Ptr CShort)
-          nbSamples <- getNumSamples frame
-          forM_ [0..nbSamples-1] $ \j -> do
-            let idx = fromIntegral i * fromIntegral nbSamples + fromIntegral j :: Integer
-                t = fromIntegral idx / fromIntegral sampleRate
-                v = twoFiveOne t
-                v16 = round (v * fromIntegral (maxBound :: CShort))
-            poke (advancePtr dataPtr (fromIntegral j)) v16
-          audioWriter (Just frame)
+      print ("Channel Layout", ch)
+      print ("Channels", numChannels)
 
-        -- Write nothing to close final and finalize
-        audioWriter Nothing
+      runWithError "Alloc buffers" (av_frame_get_buffer frame 0)
 
-      _ -> error $ concat usage
-  where
-    usage = [ "Supply an out final name to write sinusoidal music to a file" ]
+      let sampleRate = apSampleRate audioParams
+      print ("sample rate", sampleRate)
+
+      vidFrameRef <- newIORef 0 :: IO (IORef Int)
+      forM_ [0..120] $ \i -> do
+        av_frame_make_writable frame
+        dataPtr <- castPtr <$> getData frame :: IO (Ptr CFloat)
+        nbSamples <- getNumSamples frame
+        forM_ [0..nbSamples-1] $ \j -> do
+          let idx = fromIntegral i * fromIntegral nbSamples + fromIntegral j :: Integer
+              t = fromIntegral idx / fromIntegral sampleRate
+              v = twoFiveOne t
+          poke (advancePtr dataPtr (fromIntegral j)) (realToFrac v)
+          vidFrame <- readIORef vidFrameRef
+          when (t * 30 >= fromIntegral vidFrame) $ do
+            -- TODO: I'm not sure why t seems to be half the actual value but I need to do
+            -- 0.5 and 1 to make the chord changes match up with the color changes
+            modifyIORef vidFrameRef (+1)
+            let color = if | t <= 0.5  -> PixelRGB8 255 0 0
+                           | t <= 1    -> PixelRGB8 0 255 0
+                           | otherwise -> PixelRGB8 0 0 255
+                img = mkImage (fromIntegral w) (fromIntegral h) color
+            videoWriter (Just (fromJuciy img))
+        audioWriter (Just frame)
+
+      videoWriter Nothing
+      audioWriter Nothing

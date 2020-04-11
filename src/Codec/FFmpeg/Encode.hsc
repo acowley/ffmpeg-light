@@ -29,6 +29,8 @@ import Foreign.Marshal.Alloc
 import Foreign.Marshal.Array (advancePtr)
 import Foreign.Marshal.Utils
 
+import Codec.FFmpeg.Internal.Debug
+
 import Foreign.Ptr
 import Foreign.Storable
 
@@ -146,6 +148,13 @@ withVideoParams ep def f = withVPs (epStreamParams ep)
     withVPs (AudioVideo _ vp) = f vp
     withVPs _ = def
 
+withAudioParams :: EncodingParams -> a -> (AudioParams -> a) -> a
+withAudioParams ep def f = withVPs (epStreamParams ep)
+  where
+    withVPs (JustAudio ap) = f ap
+    withVPs (AudioVideo ap _) = f ap
+    withVPs _ = def
+
 -- | Use default parameters for a video of the given width and
 -- height, forcing the choice of the h264 encoder.
 defaultH264 :: CInt -> CInt -> EncodingParams
@@ -236,20 +245,24 @@ initAudioStream opts oc = do
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
+  setTimeBase st (AVRational 1 (apSampleRate opts))
 
-  ctx <- getCodecContext st
-
-  -- TODO: check that these are valid
-  setSampleFormat ctx (apSampleFormat opts)
-  setSampleRate ctx (apSampleRate opts)
+  ctx <- avcodec_alloc_context3 cod
 
   supportedSampleRates <- listSupportedSampleFormats cod
   let found = not (null supportedSampleRates)
   when (not found) $ avError "Could not find supported sample rate"
+  -- TODO: check that these are valid
+  setSampleFormat ctx (apSampleFormat opts)
+  setSampleRate ctx (apSampleRate opts)
 
   setChannelLayout ctx (apChannelLayout opts)
 
-  setTimeBase st (AVRational 1 (apSampleRate opts))
+  runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
+
+  codecParams <- getCodecParams st
+  runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+
   return (st, cod, ctx)
 
 
@@ -316,8 +329,8 @@ encode_video_check ctx pkt frame =
 -- | Allocate the stream private data and write the stream header to
 -- an output media file.
 write_header_check :: AVFormatContext -> IO ()
-write_header_check oc = do r <- avformat_write_header oc nullPtr
-                           when (r < 0) (error "Error writing header")
+write_header_check oc =
+  void $ runWithError "write header" (avformat_write_header oc nullPtr)
 
 -- | Write a packet to an output media file.
 write_frame_check :: AVFormatContext -> AVPacket -> IO ()
@@ -377,18 +390,41 @@ palettizeJuicy vp pix =
 -- means that animated gif output only works if the source images are
 -- of the target resolution.
 frameWriter :: EncodingParams -> FilePath
-            -> IO ( Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ()
-                  , (AVCodecContext, Maybe AVFrame -> IO ())
+            -> IO ( Maybe AVCodecContext
+                  , Maybe AVCodecContext
+                  , Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ()
+                  , Maybe AVFrame -> IO ()
                   )
 frameWriter ep fname = do
   let outputFormat = epFormatName ep
   oc <- allocOutputContext outputFormat fname
   outputFormat <- getOutputFormat oc
   audioCodecId <- getAudioCodecID outputFormat
+  videoCodecId <- getVideoCodecID outputFormat
 
-  let initializeVideo :: VideoParams -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
-      initializeVideo vp = do
-        (st,ctx) <- initStream (epCodec ep) vp oc
+  -- Initializing the streams needs to be done before opening the file
+  -- and checking the header because it can modify fields that are used
+  -- for time scaling so we have this rather ugly code.
+  mVideoStream <- withVideoParams ep (return Nothing) $ \vp ->
+                    (Just <$> initStream (epCodec ep) vp oc)
+  mAudioStream <- withAudioParams ep (return Nothing) $ \ap ->
+                    (Just <$> initAudioStream ap oc)
+  avio_open_check oc fname
+  numStreams <- getNumStreams oc
+  write_header_check oc
+
+  alreadyClosedRef <- newIORef False
+  let writeClose = do
+        alreadyClosed <- readIORef alreadyClosedRef
+        when (not alreadyClosed) $ do
+          write_trailer_check oc
+          modifyIORef alreadyClosedRef (const True)
+
+      initializeVideo :: AVStream
+                      -> AVCodecContext
+                      -> VideoParams
+                      -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
+      initializeVideo st ctx vp = do
         dstFmt <- getPixelFormat ctx
         dstFrame <- initTempFrame vp dstFmt
         let dstInfo = ImageInfo (vpWidth vp) (vpHeight vp) dstFmt
@@ -413,8 +449,6 @@ frameWriter ep fname = do
 
         let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
         fps <- getFps ctx
-        print ("framePeriod", framePeriod)
-        print ("fps", fps)
 
           -- The stream time_base can be changed by the call to
           -- 'write_header_check', so we read it back here to establish a way
@@ -501,7 +535,6 @@ frameWriter ep fname = do
                           writeIORef sPtr s'
                           return s'
                  timeStamp <- getCurrentFrameTimestamp
-                 print ("pts", timeStamp)
                  setPts dstFrame timeStamp
                  fillDst sws' (srcFmt, V2 srcW srcH, pixels')
                  encode_video_check ctx pkt (Just dstFrame) >>= flip when writePacket
@@ -514,23 +547,24 @@ frameWriter ep fname = do
             addFrame = addEncoded
 #endif
             go Nothing = do addFrame Nothing
-                            write_trailer_check oc
+                            writeClose
                             _ <- codec_close ctx
                             with dstFrame av_frame_free
                             av_free (getPtr pkt)
                             avio_close_check oc
                             avformat_free_context oc
-            go img@(Just _) = putStrLn "add frame" >> addFrame img
+            go img@(Just _) = addFrame img
         return go
 
-      initializeAudio :: AudioParams -> IO (AVCodecContext, Maybe AVFrame -> IO ())
-      initializeAudio ap = do
+      initializeAudio :: AVStream
+                      -> AVCodec
+                      -> AVCodecContext
+                      -> AudioParams
+                      -> IO (Maybe AVFrame -> IO ())
+      initializeAudio st codec ctx ap = do
         if audioCodecId /= avCodecIdNone
           then do
-            (st, codec, ctx) <- initAudioStream ap oc
             pkt <- av_packet_alloc
-
-            runWithError "Could not open audio codec" (open_codec ctx codec nullPtr)
 
             frameNum <- newIORef (0::Int)
             timeBase <- getTimeBase ctx
@@ -548,7 +582,11 @@ frameWriter ep fname = do
                                   (av_interleaved_write_frame oc pkt)
                       return ()
                 writeAudioFrame :: Maybe AVFrame -> IO ()
-                writeAudioFrame Nothing = read_pkts >> write_trailer_check oc
+                writeAudioFrame Nothing = do
+                  read_pkts
+                  writeClose
+                  codec_close ctx
+                  return ()
                 writeAudioFrame (Just frame) = writeAudioFrame' frame
 
                 writeAudioFrame' :: AVFrame -> IO ()
@@ -565,21 +603,26 @@ frameWriter ep fname = do
                   runWithError "Error encoding audio"
                       (avcodec_send_frame ctx frame)
                   read_pkts
-            return (ctx, writeAudioFrame)
+            return writeAudioFrame
           else
-            return (undefined, \_ -> return ())
+            return $ \_ -> return ()
 
-  videoWriter <- withVideoParams ep (return (\_ -> return ())) initializeVideo
-  audioWriter <- case epStreamParams ep of
-                   JustAudio ap    -> initializeAudio ap
-                   AudioVideo ap _ -> initializeAudio ap
-                   _ -> return (undefined, \_ -> return ())
+  videoWriter <- case mVideoStream of
+                   Just (vs, ctx) ->
+                     withVideoParams ep (return (\_ -> return ()))
+                       (initializeVideo vs ctx)
+                   Nothing -> return (\_ -> return ())
+  audioWriter <- case mAudioStream of
+                   Just (as, codec, ctx) ->
+                     withAudioParams ep (return $ \_ -> return ())
+                       (initializeAudio as codec ctx)
+                   Nothing -> return $ \_ -> return ()
 
-  avio_open_check oc fname
-  write_header_check oc
-
-  return (videoWriter, audioWriter)
-
+  return ( snd <$> mVideoStream
+         , (\(_, _, ctx) -> ctx) <$> mAudioStream
+         , videoWriter
+         , audioWriter
+         )
 
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write RGB images of the resolution given by
@@ -593,5 +636,5 @@ frameWriterRgb :: EncodingParams -> FilePath
 frameWriterRgb ep f =
   withVideoParams ep (avError "You must provide VideoParams") $ \vp -> do
     let aux pixels = (avPixFmtRgb24, V2 (vpWidth vp) (vpHeight vp), pixels)
-    (videoWriter, _) <- frameWriter ep f
+    (_, _, videoWriter, _) <- frameWriter ep f
     return $ \pix -> videoWriter (aux <$> pix)

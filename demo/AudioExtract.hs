@@ -44,29 +44,32 @@ main = do initFFmpeg
                                     , epFormatName = Nothing
                                     , epStreamParams = JustAudio outParams
                                     }
-                  (_, (ctx, audioWriter)) <- frameWriter encParams outname
-                  (sendFrame, getResampledFrame) <- makeResampler ctx inParams outParams
-                  let go i = do
-                        mFrame <- getFrame
-                        case mFrame of
-                          Nothing -> readAndWrite
-                          Just frame -> do
-                            sendFrame frame
-                            readAndWrite
-                            go (i+1)
-                      readAndWrite = do
-                        mFrame <- getResampledFrame
-                        case mFrame of
-                          Nothing -> return ()
-                          Just frame -> do
-                            fs <- getNumSamples frame
-                            audioWriter (Just frame)
-                            readAndWrite
-                  go 1
-                  audioWriter Nothing
+                  (_, mCtx, _, audioWriter) <- frameWriter encParams outname
+                  case mCtx of
+                    Nothing -> error "Didn't get audio context"
+                    Just ctx -> do
+                      (sendFrame, getResampledFrame) <- makeResampler ctx inParams outParams
+                      let go i = do
+                            mFrame <- getFrame
+                            case mFrame of
+                              Nothing -> readAndWrite
+                              Just frame -> do
+                                sendFrame frame
+                                readAndWrite
+                                go (i+1)
+                          readAndWrite = do
+                            mFrame <- getResampledFrame
+                            case mFrame of
+                              Nothing -> return ()
+                              Just frame -> do
+                                fs <- getNumSamples frame
+                                audioWriter (Just frame)
+                                readAndWrite
+                      go 1
+                      audioWriter Nothing
 
-                  cleanup
-                  return ()
+                      cleanup
+                      return ()
               return ()
             _ -> error $ concat usage
   where
