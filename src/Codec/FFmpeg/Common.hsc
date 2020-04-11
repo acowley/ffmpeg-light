@@ -301,16 +301,32 @@ walkPtrs ptr isDone = do
 listSupportedSampleFormats :: AVCodec -> IO [AVSampleFormat]
 listSupportedSampleFormats codec = do
   fmts <- getSampleFormats codec
-  walkPtrs fmts (\p -> do v <- peek p
-                          return $ getSampleFormatInt v < 0
+  walkPtrs fmts (\ptr ->
+                    if ptr == nullPtr
+                      then return True
+                      else do
+                        v <- peek ptr
+                        return $ getSampleFormatInt v == -1
                 )
 
 listSupportedChannelLayouts :: AVCodec -> IO [CULong]
 listSupportedChannelLayouts codec = do
   chanPtr <- getChannelLayouts codec
-  walkPtrs chanPtr (return . (==) nullPtr)
+  walkPtrs chanPtr (\ptr ->
+                    if ptr == nullPtr
+                      then return True
+                      else do
+                        v <- peek ptr
+                        return $ v == 0
+                   )
 
 listSupportedSampleRates :: AVCodec -> IO [CInt]
 listSupportedSampleRates codec = do
   srPtr <- getSupportedSampleRates codec
-  walkPtrs srPtr (return . (==) nullPtr)
+  walkPtrs srPtr (\ptr ->
+                    if ptr == nullPtr
+                      then return True
+                      else do
+                        v <- peek ptr
+                        return $ v == 0
+                 )

@@ -70,6 +70,9 @@ mallocAVFormatContext = AVFormatContext <$> avformat_alloc_context
 
 newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 
+foreign import ccall "avcodec_alloc_context3"
+  avcodec_alloc_context3 :: AVCodec -> IO AVCodecContext
+
 #mkField BitRate, CInt
 
 #mkField SampleFormat, AVSampleFormat
@@ -124,16 +127,24 @@ setAspectRatio :: HasRawAspectRatio a => a -> Maybe AVRational -> IO ()
 setAspectRatio x Nothing      = setRawAspectRatio x (AVRational 0 1)
 setAspectRatio x (Just ratio) = setRawAspectRatio x ratio
 
-newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
+newtype AVCodecParameters = AVCodecParameters (Ptr ()) deriving (Storable, HasPtr)
 
+foreign import ccall "avcodec_parameters_from_context"
+  avcodec_parameters_from_context :: AVCodecParameters
+                                  -> AVCodecContext
+                                  -> IO CInt
+
+newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #mkField Id, CInt
 #mkField CodecContext, AVCodecContext
 #mkField StreamIndex, CInt
+#mkField CodecParams, AVCodecParameters
 
 #hasField AVStream, Id, id
 #hasField AVStream, TimeBase, time_base
 #hasField AVStream, CodecContext, codec
 #hasField AVStream, StreamIndex, index
+#hasField AVStream, CodecParams, codecpar
 
 newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString

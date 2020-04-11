@@ -159,9 +159,15 @@ imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 imageWriter :: forall p. JuicyPixelFormat p
             => EncodingParams -> FilePath -> IO (Maybe (Image p) -> IO ())
 imageWriter ep f = do
-  (videoWriter, _) <- frameWriter ep f
-  return $ (. fmap aux) videoWriter
-  where aux img = let w = fromIntegral $ imageWidth img
-                      h = fromIntegral $ imageHeight img
-                      p = V.unsafeCast $ imageData img
-                  in  (juicyPixelFormat ([]::[p]), V2 w h, p)
+  (_, _, videoWriter, _) <- frameWriter ep f
+  return $ (. fmap fromJuciy) videoWriter
+
+-- | Util function to convert a JuicyPixels image to the same structure
+-- used by 'frameWriter'
+fromJuciy :: forall p. JuicyPixelFormat p
+          => Image p -> (AVPixelFormat, V2 CInt, V.Vector CUChar)
+fromJuciy img = (juicyPixelFormat ([]::[p]), V2 w h, p)
+  where
+    w = fromIntegral $ imageWidth img
+    h = fromIntegral $ imageHeight img
+    p = V.unsafeCast $ imageData img

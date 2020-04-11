@@ -69,3 +69,9 @@ foreign import ccall "avcodec_get_name"
 -- | Get the name of a codec.
 debugCodecName :: AVCodecID -> IO String
 debugCodecName = avcodec_get_name >=> peekCString
+
+foreign import ccall "av_get_sample_fmt_name"
+  av_get_sample_fmt_name :: AVSampleFormat -> IO CString
+
+debugSampleFmtName :: AVSampleFormat -> IO String
+debugSampleFmtName = av_get_sample_fmt_name >=> peekCString
