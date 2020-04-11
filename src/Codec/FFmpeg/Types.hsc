@@ -87,6 +87,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField ChannelLayout, CULong
 #mkField Channels, CInt
 #mkField FrameSize, CInt
+#mkField FrameRate, AVRational
 
 #hasField AVCodecContext, BitRate, bit_rate
 #hasField AVCodecContext, Width, width
@@ -104,6 +105,7 @@ newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodecContext, Channels, channels
 #hasField AVCodecContext, SampleFormat, sample_fmt
 #hasField AVCodecContext, FrameSize, frame_size
+#hasField AVCodecContext, FrameRate, framerate
 
 getFps :: (HasTimeBase a, HasTicksPerFrame a) => a -> IO CDouble
 getFps x = do

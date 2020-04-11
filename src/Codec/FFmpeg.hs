@@ -7,14 +7,17 @@ module Codec.FFmpeg (-- * Initialization
                      imageReader, imageReaderTime,
                      imageReaderT, imageReaderTimeT,
                      -- * Encoding
-                     EncodingParams(..), defaultParams, imageWriter,
+                     EncodingParams(..), StreamParams(..),
+                     VideoParams(..), AudioParams(..),
+                     defaultParams, imageWriter,
                      -- * Types and Enums
-                     module Codec.FFmpeg.Types, 
+                     module Codec.FFmpeg.Types,
                      module Codec.FFmpeg.Enums
                      )where
 import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Juicy
+import Codec.FFmpeg.Resampler
 import Codec.FFmpeg.Types
 import Foreign.C.Types (CInt(..))
 
