@@ -524,7 +524,7 @@ frameWriter ep fname = do
             addEncoded (Just srcImg@(srcFmt, V2 srcW srcH, pixels)) =
               do resetPacket
                  when (not $ checkPalCompat srcImg)
-                      (error $
+                     (error $
                       unlines [ "Palettized output requires source images to be the "
                               , "same resolution as the output video" ])
                  let pixels' = maybe pixels ($ V.unsafeCast pixels) palettizer
@@ -565,9 +565,12 @@ frameWriter ep fname = do
         if audioCodecId /= avCodecIdNone
           then do
             pkt <- av_packet_alloc
+            init_packet pkt
 
             frameNum <- newIORef (0::Int)
             timeBase <- getTimeBase ctx
+
+            lastPts <- newIORef 0
 
             let read_pkts = do
                   ret <- avcodec_receive_packet ctx pkt
@@ -578,6 +581,7 @@ frameWriter ep fname = do
                       timeBase2 <- getTimeBase st
                       packet_rescale_ts pkt timeBase timeBase2
                       setStreamIndex pkt =<< getStreamIndex st
+                      setPts pkt =<< readIORef lastPts
                       runWithError "Error while writing audio frame"
                                   (av_interleaved_write_frame oc pkt)
                       return ()
@@ -597,7 +601,9 @@ frameWriter ep fname = do
                   onGoingSampleCount <- readIORef frameNum
                   let samplesCount = av_rescale_q (fromIntegral onGoingSampleCount)
                                               (AVRational 1 sampleRate) timeBase
-                  setPts frame samplesCount
+                  setPts frame (av_rescale_q samplesCount (AVRational 1 sampleRate) timeBase)
+                  newPts <- getPts frame
+                  modifyIORef lastPts (const newPts)
                   modifyIORef frameNum (+ fromIntegral numSamples)
 
                   runWithError "Error encoding audio"

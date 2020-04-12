@@ -231,6 +231,7 @@ newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
 #mkField Size, CInt
 #mkField PacketFlags, PacketFlag
 #mkField Dts, CLong
+#mkField Duration, CULong
 
 #hasField AVPacket, PktData, data
 #hasField AVPacket, Size, size
@@ -238,6 +239,7 @@ newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVPacket, StreamIndex, stream_index
 #hasField AVPacket, Pts, pts
 #hasField AVPacket, Dts, dts
+#hasField AVPacket, Duration, duration
 
 -- | @sizeof@ the 'AVPacket' structure in bytes.
 packetSize :: Int
