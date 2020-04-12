@@ -1,3 +1,22 @@
+# 0.13.0
+* Audio support
+* New demo for extracting audio from a video to a mp3
+* New with both video and audio using sinusoidal audio waves
+* New module for AudioStream and Resampler
+* The Enums now contain most of the codec types
+* Bump version
+* Changed stack.yaml because extra-deps seem like old version
+
+Contains the following breaking changes:
+* EncodingParams has been changed to support audio. Video and audio specific Params
+  are in new records called VideoParams and AudioParams respectively
+* Interface to frameWriter has been changed to support audio. Now returns both Video
+  and Audio AVCodecContexts if there are any.
+* Interface initStream has been changed because CodecID was moved and VideoParams does
+  not contain codec information.
+* Default functions for EncodingParams are different now because the changing of
+  EncodingParams
+
 # 0.12.2.2
 * Fix a video playback framerate issue in the `vplay` demo (@gelisam)
 

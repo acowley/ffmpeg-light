@@ -581,6 +581,8 @@ frameWriter ep fname = do
                       timeBase2 <- getTimeBase st
                       packet_rescale_ts pkt timeBase timeBase2
                       setStreamIndex pkt =<< getStreamIndex st
+                      -- TODO: Not sure this pts will be exactly accurate.
+                      -- Also, we need to set duration too because it doesn't seem to be set.
                       setPts pkt =<< readIORef lastPts
                       runWithError "Error while writing audio frame"
                                   (av_interleaved_write_frame oc pkt)
