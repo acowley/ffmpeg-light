@@ -288,7 +288,12 @@ stringError err =
   where
     len = 1000
 
-walkPtrs :: Storable a => Ptr a -> (Ptr a -> IO Bool) -> IO [a]
+-- | Walk a C array placing the values into a Haskell list.
+-- Stop incrementing the pointer when the function returns True
+walkPtrs :: Storable a
+         => Ptr a -- ^ Ptr to the beginning of an array
+         -> (Ptr a -> IO Bool) -- ^ Function to specify when we should terminate
+         -> IO [a]
 walkPtrs ptr isDone = do
   d <- isDone ptr
   if d
