@@ -106,7 +106,7 @@ main = do
                     , epFormatName = Nothing
                     , epStreamParams = AudioVideo audioParams videoParams
                     }
-  (_, mCtx, videoWriter, audioWriter) <- frameWriter encParams "sinusoidal.mov"
+  (_, mCtx, videoWriter, audioWriter) <- frameWriter encParams "sinusoidal.mp4"
   case mCtx of
     Nothing -> error "Could not get audio ctx"
     Just ctx -> do
@@ -143,8 +143,8 @@ main = do
             -- TODO: I'm not sure why t seems to be half the actual value but I need to do
             -- 0.5 and 1 to make the chord changes match up with the color changes
             modifyIORef vidFrameRef (+1)
-            let color = if | t <= 0.5  -> PixelRGB8 255 0 0
-                           | t <= 1    -> PixelRGB8 0 255 0
+            let color = if | t <= 1    -> PixelRGB8 255 0 0
+                           | t <= 2    -> PixelRGB8 0 255 0
                            | otherwise -> PixelRGB8 0 0 255
                 img = mkImage (fromIntegral w) (fromIntegral h) color
             videoWriter (Just (fromJuciy img))
