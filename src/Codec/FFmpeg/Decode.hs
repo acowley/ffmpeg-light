@@ -282,30 +282,20 @@ prepareAudioReader fmtCtx audStream codCtx =
                      with fmtCtx close_input
                      free (getPtr pkt)
         getFrame = do
-         r <- av_read_frame fmtCtx pkt
-         if r < 0 then return Nothing else do
-          whichStream <- getStreamIndex pkt
-          if whichStream == audStream
-          then do
-            let decode_func = do
-                  (got_frame, len) <- alloca $ \gt -> do
-                    r <- runWithError "Error coding audio frame" $
-                             decode_audio codCtx frame gt pkt
-                    return (gt, r)
-                  gf <- peek got_frame
-                  if gf == 1
-                    then return ()
-                    else do
-                      sz <- getSize pkt
-                      dt <- getPktData pkt
-                      setSize pkt (sz-len)
-                      setPktData pkt (advancePtr dt (fromIntegral len))
-                      endSize <- getSize pkt
-                      if endSize <= 0 then return () else decode_func
-            decode_func
-            free_packet pkt
-            return (Just frame)
-          else free_packet pkt >> getFrame
+          ret <- avcodec_receive_frame codCtx frame
+          if ret < 0
+            then do
+              r <- av_read_frame fmtCtx pkt
+              if r < 0
+                then return Nothing
+                else do
+                  whichStream <- getStreamIndex pkt
+                  if whichStream == audStream
+                    then do
+                      runWithError "Error sending packet" (avcodec_send_packet codCtx pkt)
+                      getFrame
+                    else free_packet pkt >> getFrame
+            else return $ Just frame
     return (getFrame `catchError` const (return Nothing), cleanup)
 
 -- | Construct an action that gets the next available frame, and an

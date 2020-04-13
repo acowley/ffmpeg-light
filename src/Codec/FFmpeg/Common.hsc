@@ -81,6 +81,12 @@ foreign import ccall "av_opt_get_sample_fmt"
 foreign import ccall "avcodec_send_frame"
   avcodec_send_frame :: AVCodecContext -> AVFrame -> IO CInt
 
+foreign import ccall "avcodec_send_packet"
+  avcodec_send_packet :: AVCodecContext -> AVPacket -> IO CInt
+
+foreign import ccall "avcodec_receive_frame"
+  avcodec_receive_frame :: AVCodecContext -> AVFrame -> IO CInt
+
 foreign import ccall "avcodec_receive_packet"
   avcodec_receive_packet :: AVCodecContext -> AVPacket -> IO CInt
 
