@@ -1,3 +1,6 @@
+# 0.13.0
+* Support webcams on Linux
+
 # 0.12.2.2
 * Fix a video playback framerate issue in the `vplay` demo (@gelisam)
 

@@ -5,6 +5,7 @@ import Control.Monad (replicateM_)
 import qualified Data.Time.Clock as C
 import qualified Data.Vector.Storable as V
 import System.Environment
+import qualified System.Info as Info
 import Control.Monad (unless)
 
 -- The example used in the README
@@ -65,11 +66,20 @@ loopFor time m =
                  unless (realToFrac (C.diffUTCTime now start) >= time) go
      go
 
-testCamera :: IO ()
-testCamera =
+testCamera :: String -> IO ()
+testCamera cameraDevice =
   do initFFmpeg -- Defaults to quiet (minimal) logging
      -- setLogLevel avLogInfo -- Restore standard ffmpeg logging
-     (getFrame, cleanup) <- imageReader (Camera "0:0" defaultCameraConfig)
+     putStrLn "Opening camera..."
+     (getFrame, cleanup) <- imageReader $
+       case Info.os of
+         "linux" ->
+           let cfg = CameraConfig (Just 30) Nothing (Just "mjpeg")
+                                  -- (Just "v4l2")
+           in Camera ("/dev/video" <> cameraDevice) cfg
+         "darwin" -> Camera "0:0" defaultCameraConfig
+         _ -> error "Unsure how to identify a default camera input"
+
      frame1 <- getFrame
      case frame1 of
        img@(Just (Image w h _)) ->
@@ -86,15 +96,23 @@ main :: IO ()
 main = do args <- getArgs
           case args of
             [] -> testEncode
+            ["cam", n] -> testCamera n
             [s]
-              | s `elem` ["--help", "-help", "-h"] -> error usage
-              | s == "cam" -> testCamera
+              | s `elem` ["--help", "-help", "-h"] -> putStrLn usage
+              | s == "cam" -> testCamera "0"
             [vidFile] -> testDecode vidFile
             _ -> error usage
   where usage =
-          unlines [ "Usage: demo [videoFile]"
+          unlines [ "Usage: demo [cam [N]|videoFile]"
                   , "  If no argument is given, a test video named "
                   , "  pulse.mov is generated."
+                  , ""
+                  , "  If the word 'cam' (without quotes) is given as an "
+                  , "  argument, an attached webcam is opened and used to "
+                  , "  record a 10s video saved to the file camera.mov. "
+                  , "  On Linux, the camera is found at /dev/videoN where N "
+                  , "  is an argument following the word 'cam'. If no value "
+                  , "  is given for N, a default of 0 is used."
                   , ""
                   , "  If a file name is given, then two frames are "
                   , "  extracted: the first frame, and the 301st."
