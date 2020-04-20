@@ -4,6 +4,7 @@
 * New with both video and audio using sinusoidal audio waves
 * New module for AudioStream and Resampler
 * The Enums now contain most of the codec types
+* Support webcams on Linux
 * Bump version
 * Changed stack.yaml because extra-deps seem like old version
 

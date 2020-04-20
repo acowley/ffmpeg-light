@@ -36,6 +36,7 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFormatContext, OutputFormat, oformat
 #hasField AVFormatContext, InputFormat, iformat
 #hasField AVFormatContext, IOContext, pb
+#hasField AVFormatContext, VideoCodecID, video_codec_id
 
 setFilename :: AVFormatContext -> String -> IO ()
 setFilename ctx fn =
@@ -365,8 +366,10 @@ data InputSource = File FilePath | Camera String CameraConfig
 data CameraConfig =
   CameraConfig { framerate  :: Maybe Int
                , resolution :: Maybe (Int,Int)
+               , format :: Maybe String
+               -- ^ Short name for a video format (e.g. @"v4l2"@)
                }
           deriving (Eq,Ord,Show,Read)
 
 defaultCameraConfig :: CameraConfig
-defaultCameraConfig = CameraConfig (Just 30) Nothing
+defaultCameraConfig = CameraConfig (Just 30) Nothing Nothing
