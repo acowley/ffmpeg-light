@@ -9,6 +9,7 @@ import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Alloc (malloc)
+import qualified Data.ByteString.Lazy as Lazy
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -44,7 +45,6 @@ setFilename ctx fn =
            dst   = (#ptr AVFormatContext, filename) ptr
            bytes = map (fromIntegral . fromEnum) fn
        zipWithM_ (pokeElemOff dst) bytes [(0 :: CInt) ..]
-
 
 foreign import ccall "av_input_video_device_next"
   av_input_video_device_next :: AVInputFormat -> IO AVInputFormat
@@ -360,7 +360,7 @@ instance Storable AVFrac where
 -- | The input source can be a file or a camera.  When using 'Camera',
 -- frequently in the form @Camera "0:0" defaultCameraConfig@, the first input video device
 -- enumerated by libavdevice is selected.
-data InputSource = File FilePath | Camera String CameraConfig
+data InputSource = File FilePath | Camera String CameraConfig | Bytes Lazy.ByteString
             deriving (Eq, Ord, Show, Read)
 
 data CameraConfig =

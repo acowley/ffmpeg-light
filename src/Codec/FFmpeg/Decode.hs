@@ -21,7 +21,15 @@ import           Foreign.Marshal.Alloc     (alloca, free, mallocBytes)
 import           Foreign.Marshal.Array     (advancePtr)
 import           Foreign.Marshal.Utils     (with)
 import           Foreign.Ptr
+import           Foreign.StablePtr
 import           Foreign.Storable
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Internal as Lazy
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
+import Foreign.ForeignPtr
+import Data.IORef
+import Data.Coerce
 
 -- * FFI Declarations
 
@@ -45,8 +53,8 @@ foreign import ccall "avcodec_find_decoder_by_name"
 foreign import ccall "avpicture_get_size"
   avpicture_get_size :: AVPixelFormat -> CInt -> CInt -> IO CInt
 
-foreign import ccall "av_malloc"
-  av_malloc :: CSize -> IO (Ptr ())
+-- foreign import ccall "av_malloc"
+--   av_malloc :: CSize -> IO (Ptr ())
 
 foreign import ccall "av_read_frame"
   av_read_frame :: AVFormatContext -> AVPacket -> IO CInt
@@ -69,6 +77,25 @@ foreign import ccall "av_find_input_format"
 
 foreign import ccall "av_format_set_video_codec"
   av_format_set_video_codec :: AVFormatContext -> AVCodec -> IO ()
+
+type Opaque o = StablePtr o
+type CAVIOContextBuffer = Ptr CUChar
+type CAVIOBufferSize = CInt
+type ReadPacketCallback o = Opaque o -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+type WritePacketCallback o = Opaque o -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+type SeekCallback o = Opaque o -> CLong -> CInt -> IO CLong
+
+foreign import ccall "wrapper"
+  mkPacketReader :: (ReadPacketCallback a) -> IO (FunPtr (ReadPacketCallback a))
+
+foreign import ccall "avio_alloc_context"
+  avio_alloc_context
+    :: CAVIOContextBuffer -> CAVIOBufferSize -> CInt -> Ptr ()
+    -> FunPtr (ReadPacketCallback a) -> FunPtr (WritePacketCallback a) -> FunPtr (SeekCallback a)
+    -> IO AVIOContext
+
+-- foreign import ccall "avio_free"
+--   avio_free :: AVIOContext -> IO CInt
 
 dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
@@ -123,6 +150,7 @@ openInput ipt =
   case ipt of
     File fileName -> openFile fileName
     Camera cam cf -> openCamera cam cf
+    Bytes b -> openByteStringReader b
 
 -- | Open an input media file.
 openFile :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
@@ -134,6 +162,53 @@ openFile filename =
          when (r /= 0) (stringError r >>= \s ->
                           fail $ "ffmpeg failed opening file: " ++ s)
          peek ctx
+
+
+-- | Open a lazy ByteString as input.
+openByteStringReader :: (MonadIO m, MonadError String m) => Lazy.ByteString -> m AVFormatContext
+openByteStringReader bytes =
+  wrapIOError . alloca $ \ctx ->
+    do avPtr <- mallocAVFormatContext
+       setupBufferReader avPtr
+       poke ctx avPtr
+       r <- avformat_open_input ctx nullPtr nullPtr nullPtr
+       when (r /= 0) (stringError r >>= \s ->
+                        fail $ "ffmpeg failed opening buffer: " ++ s)
+       peek ctx
+  where
+    setupBufferReader :: AVFormatContext -> IO ()
+    setupBufferReader avfc =
+      do let avio_ctx_buffer_size = 4096 :: CInt
+         avio_ctx_buffer <- castPtr <$> av_malloc (fromIntegral avio_ctx_buffer_size)
+         ior <- newIORef bytes
+         stableReaderContext <- newStablePtr ior
+         read_packet <- mkPacketReader packetReader
+         let readerContext = castStablePtrToPtr stableReaderContext
+         avio_ctx <- avio_alloc_context avio_ctx_buffer avio_ctx_buffer_size 0 readerContext read_packet nullFunPtr nullFunPtr
+         setIOContext avfc avio_ctx
+
+    packetReader :: ReadPacketCallback (IORef Lazy.ByteString) -- = Opaque -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+    packetReader o dst len = do
+      -- Read from the byteString and advance a readPtr
+      ior <- deRefStablePtr o
+      bs <- readIORef ior
+      if Lazy.null bs
+        then pure $ coerce averrorEof
+        else do
+          let (ls, rest) = Lazy.splitAt (fromIntegral len) bs
+              s = Lazy.toStrict ls
+          putStrLn $ "packetReader writing chunk of length " ++ show (BS.length s) ++ " to "
+            ++ show dst
+          let (fptr, off, sLen) = BS.toForeignPtr s
+              begin = plusForeignPtr fptr off
+              copyLen = min len (fromIntegral sLen)
+          withForeignPtr begin $ \src -> do
+            BS.memcpy (coerce dst) (coerce src) (fromIntegral copyLen)
+            putStrLn $ "memcpy of " ++ show len ++ " bytes to dst"
+            -- TODO we must drop copyLen from s and reassemble the Chunk
+            -- TODO if stripped is empty we advance the Lazy ByteString
+            writeIORef ior rest
+            pure copyLen
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
 -- 'AVFrame' to an 'AVPicture'.
