@@ -94,8 +94,8 @@ foreign import ccall "avio_alloc_context"
     -> FunPtr (ReadPacketCallback a) -> FunPtr (WritePacketCallback a) -> FunPtr (SeekCallback a)
     -> IO AVIOContext
 
--- foreign import ccall "avio_free"
---   avio_free :: AVIOContext -> IO CInt
+foreign import ccall "avio_context_free"
+  avio_context_free :: Ptr AVIOContext -> IO ()
 
 dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
@@ -169,14 +169,14 @@ openByteStringReader :: (MonadIO m, MonadError String m) => Lazy.ByteString -> m
 openByteStringReader bytes =
   wrapIOError . alloca $ \ctx ->
     do avPtr <- mallocAVFormatContext
-       setupBufferReader avPtr
+       inputCleanup <- setupBufferReader avPtr
        poke ctx avPtr
        r <- avformat_open_input ctx nullPtr nullPtr nullPtr
        when (r /= 0) (stringError r >>= \s ->
                         fail $ "ffmpeg failed opening buffer: " ++ s)
-       (,) <$> peek ctx <*> pure (pure ())
+       (,) <$> peek ctx <*> pure inputCleanup
   where
-    setupBufferReader :: AVFormatContext -> IO ()
+    setupBufferReader :: AVFormatContext -> IO (IO ())
     setupBufferReader avfc =
       do let avio_ctx_buffer_size = 4096 :: CInt
          avio_ctx_buffer <- castPtr <$> av_malloc (fromIntegral avio_ctx_buffer_size)
@@ -185,7 +185,15 @@ openByteStringReader bytes =
          read_packet <- mkPacketReader packetReader
          let readerContext = castStablePtrToPtr stableReaderContext
          avio_ctx <- avio_alloc_context avio_ctx_buffer avio_ctx_buffer_size 0 readerContext read_packet nullFunPtr nullFunPtr
+         let cleanup = do
+               with avio_ctx avio_context_free
+               freeStablePtr stableReaderContext
+               freeHaskellFunPtr read_packet
+               -- ior will be garbage collected after finalization of stableReaderContext
+               -- av_free avio_ctx_buffer ? av_free seems to be a macro doing nothing (while 0) in ffmpeg
+
          setIOContext avfc avio_ctx
+         pure cleanup
 
     packetReader :: ReadPacketCallback (IORef Lazy.ByteString) -- = Opaque -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
     packetReader o dst len = do
@@ -197,16 +205,13 @@ openByteStringReader bytes =
         else do
           let (ls, rest) = Lazy.splitAt (fromIntegral len) bs
               s = Lazy.toStrict ls
-          putStrLn $ "packetReader writing chunk of length " ++ show (BS.length s) ++ " to "
-            ++ show dst
           let (fptr, off, sLen) = BS.toForeignPtr s
               begin = plusForeignPtr fptr off
               copyLen = min len (fromIntegral sLen)
+          -- putStrLn $ "packetReader writing chunk of length " ++ show copyLen ++ " to "
+          --   ++ show dst
           withForeignPtr begin $ \src -> do
             BS.memcpy (coerce dst) (coerce src) (fromIntegral copyLen)
-            putStrLn $ "memcpy of " ++ show len ++ " bytes to dst"
-            -- TODO we must drop copyLen from s and reassemble the Chunk
-            -- TODO if stripped is empty we advance the Lazy ByteString
             writeIORef ior rest
             pure copyLen
 
