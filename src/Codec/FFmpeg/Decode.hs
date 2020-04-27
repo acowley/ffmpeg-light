@@ -145,11 +145,11 @@ openCamera cam cfg =
            setVideoCodecID avfc avCodecIdMjpeg
            av_format_set_video_codec avfc mjpeg
 
-openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
+openInput :: (MonadIO m, MonadError String m) => InputSource -> m (AVFormatContext, IO ())
 openInput ipt =
   case ipt of
-    File fileName -> openFile fileName
-    Camera cam cf -> openCamera cam cf
+    File fileName -> (,) <$> openFile fileName <*> pure (pure ())
+    Camera cam cf -> (,) <$> openCamera cam cf <*> pure (pure ())
     Bytes b -> openByteStringReader b
 
 -- | Open an input media file.
@@ -165,7 +165,7 @@ openFile filename =
 
 
 -- | Open a lazy ByteString as input.
-openByteStringReader :: (MonadIO m, MonadError String m) => Lazy.ByteString -> m AVFormatContext
+openByteStringReader :: (MonadIO m, MonadError String m) => Lazy.ByteString -> m (AVFormatContext, IO ())
 openByteStringReader bytes =
   wrapIOError . alloca $ \ctx ->
     do avPtr <- mallocAVFormatContext
@@ -174,7 +174,7 @@ openByteStringReader bytes =
        r <- avformat_open_input ctx nullPtr nullPtr nullPtr
        when (r /= 0) (stringError r >>= \s ->
                         fail $ "ffmpeg failed opening buffer: " ++ s)
-       peek ctx
+       (,) <$> peek ctx <*> pure (pure ())
   where
     setupBufferReader :: AVFormatContext -> IO ()
     setupBufferReader avfc =
@@ -289,11 +289,12 @@ read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
 frameReader :: (MonadIO m, MonadError String m)
             => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO ())
 frameReader dstFmt ipt =
-  do inputContext <- openInput ipt
+  do (inputContext, inputCleanup) <- openInput ipt
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, _vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
-     prepareReader inputContext vidStreamIndex dstFmt ctx
+     (r, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
+     pure (r, inputCleanup >> cleanup )
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 --
@@ -309,7 +310,7 @@ frameReaderTime :: (MonadIO m, MonadError String m)
                 => AVPixelFormat -> InputSource
                 -> m (IO (Maybe (AVFrame, Double)), IO ())
 frameReaderTime dstFmt src =
-  do inputContext <- openInput src
+  do (inputContext, inputCleanup) <- openInput src
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
@@ -324,12 +325,12 @@ frameReaderTime dstFmt src =
                        Nothing -> return Nothing
                        Just f -> do t <- frameTime' f
                                     return $ Just (f, t)
-     return (readTS, cleanup)
+     return (readTS, inputCleanup >> cleanup)
 
 frameAudioReader :: (MonadIO m, MonadError String m)
                  => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO ())
 frameAudioReader fileName = do
-  inputContext <- openInput fileName
+  (inputContext, inputCleanup) <- openInput fileName
   checkStreams inputContext
   (audioStreamIndex, ctx, cod, audioStream) <- findAudioStream inputContext
   openCodec ctx cod
@@ -349,7 +350,7 @@ frameAudioReader fileName = do
         , asCodec = codecId
         }
   (readFrame, finalize) <- prepareAudioReader inputContext audioStreamIndex ctx
-  return (as, readFrame, finalize)
+  return (as, readFrame, inputCleanup >> finalize)
 
 -- | Read time stamped RGB frames with the result in the 'MaybeT'
 -- transformer.
