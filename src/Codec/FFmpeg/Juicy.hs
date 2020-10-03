@@ -70,6 +70,7 @@ toJuicy frame = runMaybeT $ do
                _ | fmt == avPixFmtRgb24 -> mkImage ImageRGB8
                  | fmt == avPixFmtGray8 -> mkImage ImageY8
                  | fmt == avPixFmtGray16 -> mkImage ImageY16
+                 | fmt == avPixFmtYuv420p -> mkImage ImageYCbCr8
                  | otherwise -> Nothing
 
 
@@ -106,6 +107,9 @@ instance JuicyPixelFormat PixelRGB8 where
 
 instance JuicyPixelFormat PixelRGBA8 where
   juicyPixelFormat _ = avPixFmtRgba
+
+instance JuicyPixelFormat PixelYCbCr8 where
+  juicyPixelFormat _ = avPixFmtYuv420p
 
 -- | Bytes-per-pixel for a JuicyPixels 'Pixel' type.
 juicyPixelStride :: forall a proxy. Pixel a => proxy a -> Int
