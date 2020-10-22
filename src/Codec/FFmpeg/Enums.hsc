@@ -319,11 +319,14 @@ newtype AVCodecID = AVCodecID CInt deriving (Eq, Show, Storable)
  , AV_CODEC_ID_DSD_MSBF\
  , AV_CODEC_ID_DSD_LSBF_PLANAR\
  , AV_CODEC_ID_DSD_MSBF_PLANAR\
- , AV_CODEC_ID_4GV\
- , AV_CODEC_ID_INTERPLAY_ACM\
- , AV_CODEC_ID_XMA1\
- , AV_CODEC_ID_XMA2\
- , AV_CODEC_ID_DST
+ , AV_CODEC_ID_4GV
+
+
+ -- \
+ -- , AV_CODEC_ID_INTERPLAY_ACM\
+ -- , AV_CODEC_ID_XMA1\
+ -- , AV_CODEC_ID_XMA2\
+ -- , AV_CODEC_ID_DST
 
 
 newtype SwsAlgorithm = SwsAlgorithm CUInt deriving (Eq, Show, Storable)
