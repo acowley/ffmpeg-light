@@ -71,7 +71,7 @@ jobs:
 
     - name: Setup ffmpeg
       run: |
-        sudo apt-get install ffmpeg libavutil-dev libavformat-dev libavcodec-dev libswscale-dev libavdevice-dev
+        sudo apt-get install ffmpeg libsdl2-dev libavutil-dev libavformat-dev libavcodec-dev libswscale-dev libavdevice-dev
 
     - uses: actions/setup-haskell@v1
       name: Setup Haskell Stack
