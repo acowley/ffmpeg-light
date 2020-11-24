@@ -23,7 +23,7 @@ extra-package-dbs: []
 
 # Control whether we use the GHC we find on the path
 nix:
-  enable: true
+  enable: false
   packages: [ ffmpeg-full, pkgconfig, zlib, SDL2 ]
   pure: false
 
