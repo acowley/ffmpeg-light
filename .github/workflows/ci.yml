@@ -26,6 +26,7 @@ jobs:
 
     - name: Setup ffmpeg
       run: |
+        sudo apt-get update
         sudo apt-get install ffmpeg libavutil-dev libavformat-dev libavcodec-dev libswscale-dev libavdevice-dev
 
     - uses: actions/setup-haskell@v1
@@ -71,6 +72,7 @@ jobs:
 
     - name: Setup ffmpeg
       run: |
+        sudo apt-get update
         sudo apt-get install ffmpeg libsdl2-dev libavutil-dev libavformat-dev libavcodec-dev libswscale-dev libavdevice-dev
 
     - uses: actions/setup-haskell@v1
