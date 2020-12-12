@@ -35,4 +35,4 @@ PKG_CONFIG_PATH="$HOME/ffmpeg_build/lib/pkgconfig" cabal configure --disable-sha
 
 There are signs that the next Ubuntu release will come with the original `ffmpeg` and development packages.
 
-[![Build Status](https://travis-ci.org/acowley/ffmpeg-light.png)](https://travis-ci.org/acowley/ffmpeg-light)
+[![Build Status](https://github.com/acowley/ffmpeg-light/workflows/CI/badge.svg)](https://github.com/acowley/ffmpeg-light/actions)
