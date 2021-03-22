@@ -104,34 +104,20 @@ foreign import ccall "av_frame_make_writable"
 
 -- * FFmpeg Encoding Interface
 
--- | Minimal parameters describing the desired media output.
+-- | Minimal parameters describing the desired video output.
 data EncodingParams = EncodingParams
-  { epCodec  :: Maybe AVCodecID
+  { epWidth  :: CInt
+  , epHeight :: CInt
+  , epFps    :: Int
+  , epCodec  :: Maybe AVCodecID
   -- ^ If 'Nothing', then the codec is inferred from
   -- the output file name. If 'Just', then this codec
   -- is manually chosen.
-  , epFormatName :: Maybe String
-  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
-  -- from the output file name. If 'Just', the string value
-  -- should be the one available in @ffmpeg -formats@.
-  , epStreamParams :: StreamParams
-  -- ^ Encoding parameters for video, audio, or both
-  }
-
-data StreamParams =
-    JustVideo VideoParams
-  | JustAudio AudioParams
-  | AudioVideo AudioParams VideoParams
-
-data VideoParams = VideoParams
-  { vpWidth  :: CInt
-  , vpHeight :: CInt
-  , vpFps    :: Int
-  , vpPixelFormat :: Maybe AVPixelFormat
+  , epPixelFormat :: Maybe AVPixelFormat
   -- ^ If 'Nothing', automatically chose a pixel format
   -- based on the output codec. If 'Just', force the
   -- selected pixel format.
-  , vpPreset :: String
+  , epPreset :: String
   -- ^ Encoder-specific hints. For h264, the default
   -- preset is @\"medium\"@ (other options are
   -- @\"fast\"@, @\"slow\"@, etc.). For the GIF codec,
@@ -139,30 +125,128 @@ data VideoParams = VideoParams
   -- during the palettization process. This will
   -- improve image quality, but result in a larger
   -- file.
+  , epFormatName :: Maybe String
+  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
+  -- from the output file name. If 'Just', the string value
+  -- should be the one available in @ffmpeg -formats@.
   }
 
-withVideoParams :: EncodingParams -> a -> (VideoParams -> a) -> a
-withVideoParams ep def f = withVPs (epStreamParams ep)
-  where
-    withVPs (JustVideo vp) = f vp
-    withVPs (AudioVideo _ vp) = f vp
-    withVPs _ = def
+-- | Minimal parameters describing the desired audio/video output.
+data AVEncodingParams = AVEncodingParams
+  { avepWidth  :: CInt
+  , avepHeight :: CInt
+  , avepFps    :: Int
+  , avepCodec  :: Maybe AVCodecID
+  -- ^ If 'Nothing', then the codec is inferred from
+  -- the output file name. If 'Just', then this codec
+  -- is manually chosen.
+  , avepPixelFormat :: Maybe AVPixelFormat
+  -- ^ If 'Nothing', automatically chose a pixel format
+  -- based on the output codec. If 'Just', force the
+  -- selected pixel format.
+  , avepChannelLayout :: CULong
+  -- ^ Channel layout for the audio stream
+  , avepSampleRate :: CInt
+  -- ^ Sample rate for the audio stream
+  , avepSampleFormat :: AVSampleFormat
+  -- ^ Sample format for the audio stream
+  , avepPreset :: String
+  -- ^ Encoder-specific hints. For h264, the default
+  -- preset is @\"medium\"@ (other options are
+  -- @\"fast\"@, @\"slow\"@, etc.). For the GIF codec,
+  -- setting this to @\"dither\"@ will enable dithering
+  -- during the palettization process. This will
+  -- improve image quality, but result in a larger
+  -- file.
+  , avepFormatName :: Maybe String
+  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
+  -- from the output file name. If 'Just', the string value
+  -- should be the one available in @ffmpeg -formats@.
+  }
 
-withAudioParams :: EncodingParams -> a -> (AudioParams -> a) -> a
-withAudioParams ep def f = withVPs (epStreamParams ep)
-  where
-    withVPs (JustAudio ap) = f ap
-    withVPs (AudioVideo ap _) = f ap
-    withVPs _ = def
+-- | Minimal parameters describing the desired audio/video output.
+data AEncodingParams = AEncodingParams
+  { aepChannelLayout :: CULong
+  -- ^ Channel layout for the audio stream
+  , aepSampleRate :: CInt
+  -- ^ Sample rate for the audio stream
+  , aepSampleFormat :: AVSampleFormat
+  -- ^ Sample format for the audio stream
+  , aepPreset :: String
+  -- ^ Encoder-specific hints. For h264, the default
+  -- preset is @\"medium\"@ (other options are
+  -- @\"fast\"@, @\"slow\"@, etc.). For the GIF codec,
+  -- setting this to @\"dither\"@ will enable dithering
+  -- during the palettization process. This will
+  -- improve image quality, but result in a larger
+  -- file.
+  , aepFormatName :: Maybe String
+  -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
+  -- from the output file name. If 'Just', the string value
+  -- should be the one available in @ffmpeg -formats@.
+  }
+
+data VideoParams = VideoParams
+  { vpWidth  :: CInt
+  , vpHeight :: CInt
+  , vpFps    :: Int
+  , vpCodec  :: Maybe AVCodecID
+  , vpPixelFormat :: Maybe AVPixelFormat
+  , vpPreset :: String
+  }
+
+class HasVideoParams a where
+  extractVideoParams :: a -> VideoParams
+
+instance HasVideoParams EncodingParams where
+  extractVideoParams ep = VideoParams
+    { vpWidth  = epWidth ep
+    , vpHeight = epHeight ep
+    , vpFps    = epFps ep
+    , vpCodec  = epCodec ep
+    , vpPixelFormat = epPixelFormat ep
+    , vpPreset = epPreset ep
+    }
+
+instance HasVideoParams AVEncodingParams where
+  extractVideoParams ep = VideoParams
+    { vpWidth  = avepWidth ep
+    , vpHeight = avepHeight ep
+    , vpFps    = avepFps ep
+    , vpCodec  = avepCodec ep
+    , vpPixelFormat = avepPixelFormat ep
+    , vpPreset = avepPreset ep
+    }
+
+class HasAudioParams a where
+  extractAudioParams :: a -> AudioParams
+
+instance HasAudioParams AEncodingParams where
+  extractAudioParams ep = AudioParams
+    { apChannelLayout = aepChannelLayout ep
+    , apSampleRate = aepSampleRate ep
+    , apSampleFormat = aepSampleFormat ep
+    }
+
+instance HasAudioParams AVEncodingParams where
+  extractAudioParams ep = AudioParams
+    { apChannelLayout = avepChannelLayout ep
+    , apSampleRate = avepSampleRate ep
+    , apSampleFormat = avepSampleFormat ep
+    }
 
 -- | Use default parameters for a video of the given width and
 -- height, forcing the choice of the h264 encoder.
 defaultH264 :: CInt -> CInt -> EncodingParams
 defaultH264 w h =
   EncodingParams
-    { epCodec = (Just avCodecIdH264)
+    { epWidth = w
+    , epHeight = h
+    , epFps = 30
+    , epCodec = (Just avCodecIdH264)
+    , epPixelFormat = Nothing
+    , epPreset = "medium"
     , epFormatName = Nothing
-    , epStreamParams = JustVideo (VideoParams w h 30 Nothing "medium")
     }
 
 -- | Use default parameters for a video of the given width and
@@ -170,9 +254,13 @@ defaultH264 w h =
 defaultParams :: CInt -> CInt -> EncodingParams
 defaultParams w h =
   EncodingParams
-    { epCodec = Nothing
+    { epWidth = w
+    , epHeight = h
+    , epFps = 30
+    , epCodec = Nothing
+    , epPixelFormat = Nothing
+    , epPreset = ""
     , epFormatName = Nothing
-    , epStreamParams = JustVideo (VideoParams w h 30 Nothing "")
     }
 
 -- | Determine if the bitwise intersection of two values is non-zero.
@@ -182,14 +270,17 @@ checkFlag flg = \x -> (flg .&. x) /= allZeroBits
 
 -- | Find and initialize the requested encoder, and add a video stream
 -- to the output container.
-initStream :: Maybe AVCodecID -> VideoParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
-initStream _ vp _
+initStream :: EncodingParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
+initStream ep oc = initVideoStream (extractVideoParams ep) oc
+
+initVideoStream :: VideoParams -> AVFormatContext -> IO (AVStream, AVCodecContext)
+initVideoStream vp _
   | (vpWidth vp `rem` 2, vpHeight vp `rem` 2) /= (0,0) =
     error "Video dimensions must be multiples of two"
-initStream codecId vp oc = do
+initVideoStream vp oc = do
   -- Use the codec suggested by the output format, or override with
   -- the user's choice.
-  codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return codecId
+  codec <- maybe (getOutputFormat oc >>= getVideoCodecID) return (vpCodec vp)
   cod <- avcodec_find_encoder codec
   when (getPtr cod == nullPtr)
        (error "Couldn't find encoder")
@@ -238,14 +329,15 @@ initStream codecId vp oc = do
 initAudioStream :: AudioParams
                 -> AVFormatContext
                 -> IO (AVStream, AVCodec, AVCodecContext)
-initAudioStream opts oc = do
+initAudioStream params oc = do
   codecId <- getAudioCodecID =<< getOutputFormat oc
+  print codecId
   cod <- avcodec_find_encoder codecId
   when (getPtr cod == nullPtr) (avError "Could not find audio codec")
 
   st <- avformat_new_stream oc cod
   getNumStreams oc >>= setId st . subtract 1
-  setTimeBase st (AVRational 1 (apSampleRate opts))
+  setTimeBase st (AVRational 1 (apSampleRate params))
 
   ctx <- avcodec_alloc_context3 cod
 
@@ -253,10 +345,10 @@ initAudioStream opts oc = do
   let found = not (null supportedSampleRates)
   when (not found) $ avError "Could not find supported sample rate"
   -- TODO: check that these are valid
-  setSampleFormat ctx (apSampleFormat opts)
-  setSampleRate ctx (apSampleRate opts)
+  setSampleFormat ctx (apSampleFormat params)
+  setSampleRate ctx (apSampleRate params)
 
-  setChannelLayout ctx (apChannelLayout opts)
+  setChannelLayout ctx (apChannelLayout params)
 
   runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
 
@@ -378,6 +470,14 @@ palettizeJuicy vp pix =
   where mkImage = Image (fromIntegral $ vpWidth vp) (fromIntegral $ vpHeight vp)
         doDither = vpPreset vp == "dither"
 
+{-# DEPRECATED frameWriter "Please use videoWriter instead." #-}
+frameWriter :: EncodingParams -> FilePath
+            -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
+frameWriter ep fname = do
+  let sp = JustVideo (extractVideoParams ep)
+  writerContext <- avWriter (epFormatName ep) sp fname
+  return (avwVideoWriter writerContext)
+
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write image frames (specified by a pixel
 -- format, resolution, and pixel data). If this function is applied to
@@ -389,14 +489,60 @@ palettizeJuicy vp pix =
 -- (i.e. those that are handled by @libswscaler@). Practically, this
 -- means that animated gif output only works if the source images are
 -- of the target resolution.
-frameWriter :: EncodingParams -> FilePath
-            -> IO ( Maybe AVCodecContext
-                  , Maybe AVCodecContext
-                  , Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ()
-                  , Maybe AVFrame -> IO ()
-                  )
-frameWriter ep fname = do
-  let outputFormat = epFormatName ep
+videoWriter :: EncodingParams -> FilePath
+            -> IO (Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ())
+videoWriter ep fname = do
+  let sp = JustVideo (extractVideoParams ep)
+  writerContext <- avWriter (epFormatName ep) sp fname
+  return (avwVideoWriter writerContext)
+
+data StreamParams =
+    JustVideo VideoParams
+  | JustAudio AudioParams
+  | AudioVideo AudioParams VideoParams
+
+withVideoParams :: StreamParams -> a -> (VideoParams -> a) -> a
+withVideoParams sp def f =
+  case sp of
+    JustVideo vp -> f vp
+    AudioVideo _ vp -> f vp
+    _ -> def
+
+withAudioParams :: StreamParams -> a -> (AudioParams -> a) -> a
+withAudioParams sp def f =
+  case sp of
+    JustAudio ap -> f ap
+    AudioVideo ap _ -> f ap
+    _ -> def
+
+-- | Open a target for writing an audio stream.
+audioWriter :: AEncodingParams
+            -> FilePath
+            -> IO (Maybe AVCodecContext, Maybe AVFrame -> IO ())
+audioWriter ep fname = do
+  let sp = JustAudio (extractAudioParams ep)
+  writerContext <- avWriter (aepFormatName ep) sp fname
+  return (avwAudioCodecContext writerContext, avwAudioWriter writerContext)
+
+data AVWriterContext = AVWriterContext
+  { avwVideoCodecContext :: Maybe AVCodecContext
+  , avwAudioCodecContext :: Maybe AVCodecContext
+  , avwVideoWriter :: Maybe (AVPixelFormat, V2 CInt, Vector CUChar) -> IO ()
+  , avwAudioWriter :: Maybe AVFrame -> IO ()
+  }
+
+-- | Open a target for writing a video and audio file.
+audioVideoWriter :: AVEncodingParams -> FilePath -> IO AVWriterContext
+audioVideoWriter ep fname = do
+  let sp = AudioVideo (extractAudioParams ep) (extractVideoParams ep)
+  avWriter (avepFormatName ep) sp fname
+
+-- | For internal use only. Use 'videoWriter', 'audioWriter', or 'audioVideoWriter' instead.
+avWriter :: Maybe String
+         -> StreamParams
+         -> FilePath
+         -> IO AVWriterContext
+avWriter outputFormat sp fname = do
   oc <- allocOutputContext outputFormat fname
   outputFormat <- getOutputFormat oc
   audioCodecId <- getAudioCodecID outputFormat
@@ -405,9 +551,9 @@ frameWriter ep fname = do
   -- Initializing the streams needs to be done before opening the file
   -- and checking the header because it can modify fields that are used
   -- for time scaling so we have this rather ugly code.
-  mVideoStream <- withVideoParams ep (return Nothing) $ \vp ->
-                    (Just <$> initStream (epCodec ep) vp oc)
-  mAudioStream <- withAudioParams ep (return Nothing) $ \ap ->
+  mVideoStream <- withVideoParams sp (return Nothing) $ \vp ->
+                    (Just <$> initVideoStream vp oc)
+  mAudioStream <- withAudioParams sp (return Nothing) $ \ap ->
                     (Just <$> initAudioStream ap oc)
   avio_open_check oc fname
   numStreams <- getNumStreams oc
@@ -559,9 +705,8 @@ frameWriter ep fname = do
       initializeAudio :: AVStream
                       -> AVCodec
                       -> AVCodecContext
-                      -> AudioParams
                       -> IO (Maybe AVFrame -> IO ())
-      initializeAudio st codec ctx ap = do
+      initializeAudio st codec ctx = do
         if audioCodecId /= avCodecIdNone
           then do
             pkt <- av_packet_alloc
@@ -617,20 +762,21 @@ frameWriter ep fname = do
 
   videoWriter <- case mVideoStream of
                    Just (vs, ctx) ->
-                     withVideoParams ep (return (\_ -> return ()))
+                     withVideoParams sp (return (\_ -> return ()))
                        (initializeVideo vs ctx)
                    Nothing -> return (\_ -> return ())
   audioWriter <- case mAudioStream of
                    Just (as, codec, ctx) ->
-                     withAudioParams ep (return $ \_ -> return ())
-                       (initializeAudio as codec ctx)
+                     withAudioParams sp (return $ \_ -> return ())
+                       (const (initializeAudio as codec ctx))
                    Nothing -> return $ \_ -> return ()
 
-  return ( snd <$> mVideoStream
-         , (\(_, _, ctx) -> ctx) <$> mAudioStream
-         , videoWriter
-         , audioWriter
-         )
+  return $ AVWriterContext
+    { avwVideoCodecContext = snd <$> mVideoStream
+    , avwAudioCodecContext = (\(_, _, ctx) -> ctx) <$> mAudioStream
+    , avwVideoWriter = videoWriter
+    , avwAudioWriter = audioWriter
+    }
 
 -- | Open a target file for writing a video stream. The function
 -- returned may be used to write RGB images of the resolution given by
@@ -641,8 +787,7 @@ frameWriter ep fname = do
 -- provide a 'EncodingParams' without 'VideoParams'
 frameWriterRgb :: EncodingParams -> FilePath
                -> IO (Maybe (Vector CUChar) -> IO ())
-frameWriterRgb ep f =
-  withVideoParams ep (avError "You must provide VideoParams") $ \vp -> do
-    let aux pixels = (avPixFmtRgb24, V2 (vpWidth vp) (vpHeight vp), pixels)
-    (_, _, videoWriter, _) <- frameWriter ep f
-    return $ \pix -> videoWriter (aux <$> pix)
+frameWriterRgb ep f = do
+  let aux pixels = (avPixFmtRgb24, V2 (epWidth ep) (epHeight ep), pixels)
+  videoWriter <- frameWriter ep f
+  return $ \pix -> videoWriter (aux <$> pix)

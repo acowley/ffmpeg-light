@@ -110,10 +110,6 @@ main = do initFFmpeg
 
           forM_ path $ w . Just . logoTest (uniformTexture blue)
           w Nothing
-  where params = EncodingParams
-                    { epCodec = Nothing
-                    , epFormatName = Nothing
-                    , epStreamParams = JustVideo (VideoParams fgSizei fgSizei 30 Nothing "")
-                    }
+  where params = defaultParams fgSizei fgSizei
         -- tinyGif = params { epPixelFormat = Just avPixFmtRgb8 }
         -- prettyGif = params { epPreset = "dither" }

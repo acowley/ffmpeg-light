@@ -76,7 +76,7 @@ withSws img k = swsPlanes img $ \planes ->
                   swsStrides img $ \strides ->
                     sliceHeight img $ \height ->
                       k planes strides height
-                        
+
 -- | @swsScale ctx src dst@ scales the entire @src@ image to @dst@
 -- using the previously initialized @ctx@.
 swsScale :: (SwsCompatible src, SwsCompatible dst)

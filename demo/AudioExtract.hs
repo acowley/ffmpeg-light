@@ -4,12 +4,8 @@ import           Codec.FFmpeg
 import           Codec.FFmpeg.AudioStream
 import           Codec.FFmpeg.Decode
 import           Codec.FFmpeg.Encode
-import           Codec.FFmpeg.Enums
 import           Codec.FFmpeg.Resampler
-import           Control.Applicative
-import           Control.Monad            (replicateM_)
 import           Control.Monad.Except
-import qualified Data.Vector.Storable     as V
 import           System.Environment
 
 
@@ -39,17 +35,20 @@ main = do initFFmpeg
                                   , apSampleRate = 44100
                                   , apSampleFormat = asSampleFormat as
                                   }
-                      encParams = EncodingParams
-                                    { epCodec = Nothing
-                                    , epFormatName = Nothing
-                                    , epStreamParams = JustAudio outParams
-                                    }
-                  (_, mCtx, _, audioWriter) <- frameWriter encParams outname
+                      encParams = AEncodingParams
+                                  { aepChannelLayout = apChannelLayout outParams
+                                  , aepSampleRate = apSampleRate outParams
+                                  , aepSampleFormat = apSampleFormat outParams
+                                  , aepPreset = ""
+                                  , aepFormatName = Nothing
+                                  }
+                  (mCtx, audWriter) <- audioWriter encParams outname
                   case mCtx of
                     Nothing -> error "Didn't get audio context"
                     Just ctx -> do
                       (sendFrame, getResampledFrame) <- makeResampler ctx inParams outParams
-                      let go i = do
+                      let go :: Int -> IO ()
+                          go i = do
                             mFrame <- getFrame
                             case mFrame of
                               Nothing -> readAndWrite
@@ -62,15 +61,14 @@ main = do initFFmpeg
                             case mFrame of
                               Nothing -> return ()
                               Just frame -> do
-                                fs <- getNumSamples frame
-                                audioWriter (Just frame)
+                                audWriter (Just frame)
                                 readAndWrite
                       go 1
-                      audioWriter Nothing
+                      audWriter Nothing
 
                       cleanup
                       return ()
               return ()
-            _ -> error $ concat usage
+            _ -> putStrLn usage
   where
-    usage = [ "Supply an input video to extract the audio file to a wav file" ]
+    usage = "Supply an input video and output filename to extract the audio file to a mp3 file"

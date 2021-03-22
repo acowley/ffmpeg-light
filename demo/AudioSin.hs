@@ -3,25 +3,18 @@ module Main where
 
 import           Codec.FFmpeg
 import           Codec.FFmpeg.AudioStream
-import Codec.FFmpeg.Juicy
 import           Codec.FFmpeg.Common
-import           Codec.FFmpeg.Decode
 import           Codec.FFmpeg.Encode
 import           Codec.FFmpeg.Enums
-import           Codec.FFmpeg.Resampler
+import           Codec.FFmpeg.Juicy
 import           Codec.FFmpeg.Types
+import           Codec.Picture
 import           Control.Monad.Except
 import           Data.IORef
-import qualified Data.Vector as V
-import qualified Data.Vector.Storable     as VS
-import           Foreign.C.String
 import           Foreign.C.Types
-import           Foreign.ForeignPtr
 import           Foreign.Marshal.Array
 import           Foreign.Ptr
 import           Foreign.Storable
-import Codec.Picture
-import Numeric
 import           System.Environment
 
 -- Simple Music DSL
@@ -61,7 +54,7 @@ e5 :: Sound
 e5 = mkNote 659.2551
 
 combineSounds :: [Sound] -> Sound
-combineSounds snds t = sum $ map (\snd -> snd t) snds
+combineSounds snds t = sum $ map (\s -> s t) snds
 
 -- Take sounds and their duration and put them in order
 sequenceSounds :: [(Float, Sound)] -> Sound
@@ -87,31 +80,28 @@ main :: IO ()
 main = do
   initFFmpeg
 
-  let audioParams = AudioParams
-                    { apChannelLayout = avChLayoutMono
-                    , apSampleRate = 44100
-                    , apSampleFormat = avSampleFmtFltp
-                    }
-      w = 1080
+  let w = 1080
       h = 720
-      videoParams = VideoParams
-                    { vpWidth = w
-                    , vpHeight = h
-                    , vpFps = 30
-                    , vpPixelFormat = Nothing
-                    , vpPreset = ""
+      encParams = AVEncodingParams
+                    { avepWidth = w
+                    , avepHeight = h
+                    , avepFps = 30
+                    , avepCodec = Nothing
+                    , avepPixelFormat = Nothing
+                    , avepChannelLayout = avChLayoutMono
+                    , avepSampleRate = 44100
+                    , avepSampleFormat = avSampleFmtFltp
+                    , avepPreset = ""
+                    , avepFormatName = Nothing
                     }
-      encParams = EncodingParams
-                    { epCodec = Nothing
-                    , epFormatName = Nothing
-                    , epStreamParams = AudioVideo audioParams videoParams
-                    }
-  (_, mCtx, videoWriter, audioWriter) <- frameWriter encParams "sinusoidal.mp4"
+  writerContext <- audioVideoWriter encParams "sinusoidal.mp4"
+  let mCtx = avwAudioCodecContext writerContext
+      videoWriter = avwVideoWriter writerContext
+      audioWriter = avwAudioWriter writerContext
   case mCtx of
     Nothing -> error "Could not get audio ctx"
     Just ctx -> do
       frame <- frame_alloc_check
-      numSamples <- getFrameSize ctx
       setNumSamples frame =<< getFrameSize ctx
       setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
       setChannelLayout frame =<< getChannelLayout ctx
@@ -125,7 +115,7 @@ main = do
 
       runWithError "Alloc buffers" (av_frame_get_buffer frame 0)
 
-      let sampleRate = apSampleRate audioParams
+      let sampleRate = avepSampleRate encParams
       print ("sample rate", sampleRate)
 
       vidFrameRef <- newIORef 0 :: IO (IORef Int)

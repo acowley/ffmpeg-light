@@ -159,7 +159,7 @@ imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 imageWriter :: forall p. JuicyPixelFormat p
             => EncodingParams -> FilePath -> IO (Maybe (Image p) -> IO ())
 imageWriter ep f = do
-  (_, _, videoWriter, _) <- frameWriter ep f
+  videoWriter <- frameWriter ep f
   return $ (. fmap fromJuciy) videoWriter
 
 -- | Util function to convert a JuicyPixels image to the same structure

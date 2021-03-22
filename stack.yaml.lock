@@ -3,10 +3,31 @@
 # For more information, please see the documentation at:
 #   https://docs.haskellstack.org/en/stable/lock_files
 
-packages: []
+packages:
+- completed:
+    hackage: Rasterific-0.6.1.1@sha256:02890bd3903e37aebfe8c89909ea108a9fc253053f5368ce0e3ff4544fbaa7d6,5324
+    pantry-tree:
+      size: 6278
+      sha256: bb38f7aafda4c993e43e8aca3feca1083e5a8c2cec4be3756206b87251a040c7
+  original:
+    hackage: Rasterific-0.6.1.1
+- completed:
+    hackage: FontyFruity-0.5.3.2@sha256:cd43670271c4b96d7a44d199ba52ed087281db52427332077bad187ad89d8bd9,2112
+    pantry-tree:
+      size: 1312
+      sha256: 686e11a72cf6e6276744d11e838ae880e52f4fbf29dc1c909901312e808d5db5
+  original:
+    hackage: FontyFruity-0.5.3.2
+- completed:
+    hackage: sdl2-2.1.3.1@sha256:13f4bbee291193e48d33888ee6fba3696fe04b464157fca3a9e7fc443bba4dc1,9466
+    pantry-tree:
+      size: 6182
+      sha256: b6090e850aa6f1f63fe1af36b79d1cd01507be3bf19fe17e251f78656eb2267b
+  original:
+    hackage: sdl2-2.1.3.1
 snapshots:
 - completed:
-    size: 491387
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/15/6.yaml
-    sha256: 8d81505a6de861e167a58534ab62330afb75bfa108735c7db1204f7ef2a39d79
-  original: lts-15.6
+    size: 537868
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/9/21.yaml
+    sha256: 0a3be91c2bce851de4755003cfb1d85d62b6f90276231fcc305729c0c5c864a9
+  original: lts-9.21
