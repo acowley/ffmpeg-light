@@ -416,6 +416,9 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
      w <- getWidth codCtx
      h <- getHeight codCtx
      fmt <- getPixelFormat codCtx
+     case fmt of
+       AVPixelFormat i | i < 0 -> fail ("Unusable pixel format: " <> show fmt)
+       _ -> pure ()
 
      setWidth fRgb w
      setHeight fRgb h
