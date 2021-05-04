@@ -21,7 +21,15 @@ import           Foreign.Marshal.Alloc     (alloca, free, mallocBytes)
 import           Foreign.Marshal.Array     (advancePtr)
 import           Foreign.Marshal.Utils     (with)
 import           Foreign.Ptr
+import           Foreign.StablePtr
 import           Foreign.Storable
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.ByteString.Lazy.Internal as Lazy
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BS
+import Foreign.ForeignPtr
+import Data.IORef
+import Data.Coerce
 
 -- * FFI Declarations
 
@@ -45,8 +53,8 @@ foreign import ccall "avcodec_find_decoder_by_name"
 foreign import ccall "avpicture_get_size"
   avpicture_get_size :: AVPixelFormat -> CInt -> CInt -> IO CInt
 
-foreign import ccall "av_malloc"
-  av_malloc :: CSize -> IO (Ptr ())
+-- foreign import ccall "av_malloc"
+--   av_malloc :: CSize -> IO (Ptr ())
 
 foreign import ccall "av_read_frame"
   av_read_frame :: AVFormatContext -> AVPacket -> IO CInt
@@ -69,6 +77,25 @@ foreign import ccall "av_find_input_format"
 
 foreign import ccall "av_format_set_video_codec"
   av_format_set_video_codec :: AVFormatContext -> AVCodec -> IO ()
+
+type Opaque o = StablePtr o
+type CAVIOContextBuffer = Ptr CUChar
+type CAVIOBufferSize = CInt
+type ReadPacketCallback o = Opaque o -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+type WritePacketCallback o = Opaque o -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+type SeekCallback o = Opaque o -> CLong -> CInt -> IO CLong
+
+foreign import ccall "wrapper"
+  mkPacketReader :: (ReadPacketCallback a) -> IO (FunPtr (ReadPacketCallback a))
+
+foreign import ccall "avio_alloc_context"
+  avio_alloc_context
+    :: CAVIOContextBuffer -> CAVIOBufferSize -> CInt -> Ptr ()
+    -> FunPtr (ReadPacketCallback a) -> FunPtr (WritePacketCallback a) -> FunPtr (SeekCallback a)
+    -> IO AVIOContext
+
+foreign import ccall "avio_context_free"
+  avio_context_free :: Ptr AVIOContext -> IO ()
 
 dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
@@ -118,11 +145,12 @@ openCamera cam cfg =
            setVideoCodecID avfc avCodecIdMjpeg
            av_format_set_video_codec avfc mjpeg
 
-openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
+openInput :: (MonadIO m, MonadError String m) => InputSource -> m (AVFormatContext, IO ())
 openInput ipt =
   case ipt of
-    File fileName -> openFile fileName
-    Camera cam cf -> openCamera cam cf
+    File fileName -> (,) <$> openFile fileName <*> pure (pure ())
+    Camera cam cf -> (,) <$> openCamera cam cf <*> pure (pure ())
+    Bytes b -> openByteStringReader b
 
 -- | Open an input media file.
 openFile :: (MonadIO m, MonadError String m) => String -> m AVFormatContext
@@ -134,6 +162,58 @@ openFile filename =
          when (r /= 0) (stringError r >>= \s ->
                           fail $ "ffmpeg failed opening file: " ++ s)
          peek ctx
+
+
+-- | Open a lazy ByteString as input.
+openByteStringReader :: (MonadIO m, MonadError String m) => Lazy.ByteString -> m (AVFormatContext, IO ())
+openByteStringReader bytes =
+  wrapIOError . alloca $ \ctx ->
+    do avPtr <- mallocAVFormatContext
+       inputCleanup <- setupBufferReader avPtr
+       poke ctx avPtr
+       r <- avformat_open_input ctx nullPtr nullPtr nullPtr
+       when (r /= 0) (stringError r >>= \s ->
+                        fail $ "ffmpeg failed opening buffer: " ++ s)
+       (,) <$> peek ctx <*> pure inputCleanup
+  where
+    setupBufferReader :: AVFormatContext -> IO (IO ())
+    setupBufferReader avfc =
+      do let avio_ctx_buffer_size = 4096 :: CInt
+         avio_ctx_buffer <- castPtr <$> av_malloc (fromIntegral avio_ctx_buffer_size)
+         ior <- newIORef bytes
+         stableReaderContext <- newStablePtr ior
+         read_packet <- mkPacketReader packetReader
+         let readerContext = castStablePtrToPtr stableReaderContext
+         avio_ctx <- avio_alloc_context avio_ctx_buffer avio_ctx_buffer_size 0 readerContext read_packet nullFunPtr nullFunPtr
+         let cleanup = do
+               with avio_ctx avio_context_free
+               freeStablePtr stableReaderContext
+               freeHaskellFunPtr read_packet
+               -- ior will be garbage collected after finalization of stableReaderContext
+               -- av_free avio_ctx_buffer ? av_free seems to be a macro doing nothing (while 0) in ffmpeg
+
+         setIOContext avfc avio_ctx
+         pure cleanup
+
+    packetReader :: ReadPacketCallback (IORef Lazy.ByteString) -- = Opaque -> CAVIOContextBuffer -> CAVIOBufferSize -> IO CInt
+    packetReader o dst len = do
+      -- Read from the byteString and advance a readPtr
+      ior <- deRefStablePtr o
+      bs <- readIORef ior
+      if Lazy.null bs
+        then pure $ coerce averrorEof
+        else do
+          let (ls, rest) = Lazy.splitAt (fromIntegral len) bs
+              s = Lazy.toStrict ls
+          let (fptr, off, sLen) = BS.toForeignPtr s
+              begin = plusForeignPtr fptr off
+              copyLen = min len (fromIntegral sLen)
+          -- putStrLn $ "packetReader writing chunk of length " ++ show copyLen ++ " to "
+          --   ++ show dst
+          withForeignPtr begin $ \src -> do
+            BS.memcpy (coerce dst) (coerce src) (fromIntegral copyLen)
+            writeIORef ior rest
+            pure copyLen
 
 -- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
 -- 'AVFrame' to an 'AVPicture'.
@@ -214,11 +294,12 @@ read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
 frameReader :: (MonadIO m, MonadError String m)
             => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO ())
 frameReader dstFmt ipt =
-  do inputContext <- openInput ipt
+  do (inputContext, inputCleanup) <- openInput ipt
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, _vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
-     prepareReader inputContext vidStreamIndex dstFmt ctx
+     (r, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
+     pure (r, inputCleanup >> cleanup )
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 --
@@ -234,7 +315,7 @@ frameReaderTime :: (MonadIO m, MonadError String m)
                 => AVPixelFormat -> InputSource
                 -> m (IO (Maybe (AVFrame, Double)), IO ())
 frameReaderTime dstFmt src =
-  do inputContext <- openInput src
+  do (inputContext, inputCleanup) <- openInput src
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
      _ <- openCodec ctx cod
@@ -249,12 +330,12 @@ frameReaderTime dstFmt src =
                        Nothing -> return Nothing
                        Just f -> do t <- frameTime' f
                                     return $ Just (f, t)
-     return (readTS, cleanup)
+     return (readTS, inputCleanup >> cleanup)
 
 frameAudioReader :: (MonadIO m, MonadError String m)
                  => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO ())
 frameAudioReader fileName = do
-  inputContext <- openInput fileName
+  (inputContext, inputCleanup) <- openInput fileName
   checkStreams inputContext
   (audioStreamIndex, ctx, cod, audioStream) <- findAudioStream inputContext
   openCodec ctx cod
@@ -274,7 +355,7 @@ frameAudioReader fileName = do
         , asCodec = codecId
         }
   (readFrame, finalize) <- prepareAudioReader inputContext audioStreamIndex ctx
-  return (as, readFrame, finalize)
+  return (as, readFrame, inputCleanup >> finalize)
 
 -- | Read time stamped RGB frames with the result in the 'MaybeT'
 -- transformer.
@@ -335,6 +416,9 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
      w <- getWidth codCtx
      h <- getHeight codCtx
      fmt <- getPixelFormat codCtx
+     case fmt of
+       AVPixelFormat i | i < 0 -> fail ("Unusable pixel format: " <> show fmt)
+       _ -> pure ()
 
      setWidth fRgb w
      setHeight fRgb h

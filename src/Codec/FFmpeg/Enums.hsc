@@ -513,6 +513,11 @@ newtype LogLevel = LogLevel CInt deriving (Eq, Bits, Storable)
  , AV_LOG_TRACE\
  , AV_LOG_MAX_OFFSET
 
+newtype AVError = AVError CInt deriving (Eq, Bits, Storable)
+#enum AVError, AVError \
+ , AVERROR_EOF \
+ , AVERROR_EXIT
+
 newtype AVSampleFormat = AVSampleFormat CInt deriving (Eq, Bits, Storable)
 #enum AVSampleFormat, AVSampleFormat \
  , AV_SAMPLE_FMT_NONE\
