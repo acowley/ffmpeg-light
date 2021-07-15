@@ -1,14 +1,10 @@
-# 0.13.0
+# 0.14.0
 * Audio support
 * New demo for extracting audio from a video to a mp3
 * New demo with both video and audio using sinusoidal audio waves
-* New module for AudioStream and Resampler
-* The Enums now contain most of the codec types
+
+# 0.13.0
 * Support webcams on Linux
-* Bump version
-* Changed stack.yaml because extra-deps seem like old version
-* Adding new encoding parameters for just audio and audio video
-* Two new intermediary parameters for audio and video
 
 # 0.12.2.2
 * Fix a video playback framerate issue in the `vplay` demo (@gelisam)
