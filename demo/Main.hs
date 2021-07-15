@@ -5,6 +5,7 @@ import Control.Monad (replicateM_)
 import qualified Data.Time.Clock as C
 import qualified Data.Vector.Storable as V
 import System.Environment
+import qualified System.Info as Info
 import Control.Monad (unless)
 
 -- The example used in the README
@@ -69,7 +70,16 @@ testCamera :: IO ()
 testCamera =
   do initFFmpeg -- Defaults to quiet (minimal) logging
      -- setLogLevel avLogInfo -- Restore standard ffmpeg logging
-     (getFrame, cleanup) <- imageReader (Camera "0:0" defaultCameraConfig)
+
+     (getFrame, cleanup) <- imageReader $
+       case Info.os of
+         "linux" ->
+           let cfg = CameraConfig (Just 30) Nothing (Just "mjpeg")
+                                  -- (Just "v4l2")
+           in Camera "/dev/video0" cfg
+         "darwin" -> Camera "0:0" defaultCameraConfig
+         _ -> error "Unsure how to identify a default camera input"
+
      frame1 <- getFrame
      case frame1 of
        img@(Just (Image w h _)) ->

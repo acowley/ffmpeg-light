@@ -26,7 +26,7 @@ import           Foreign.Storable
 -- * FFI Declarations
 
 foreign import ccall "avformat_open_input"
-  avformat_open_input :: Ptr AVFormatContext -> CString -> Ptr ()
+  avformat_open_input :: Ptr AVFormatContext -> CString -> Ptr AVInputFormat
                       -> Ptr AVDictionary -> IO CInt
 
 foreign import ccall "avformat_find_stream_info"
@@ -64,6 +64,12 @@ foreign import ccall "avformat_close_input"
 foreign import ccall "av_dict_set"
   av_dict_set :: Ptr AVDictionary -> CString -> CString -> CInt -> IO CInt
 
+foreign import ccall "av_find_input_format"
+  av_find_input_format :: CString -> IO (Ptr AVInputFormat)
+
+foreign import ccall "av_format_set_video_codec"
+  av_format_set_video_codec :: AVFormatContext -> AVCodec -> IO ()
+
 dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
   r <- withCString k $ \k' -> withCString v $ \v' ->
@@ -82,9 +88,13 @@ openCamera cam cfg =
       do avPtr <- mallocAVFormatContext
          setupCamera avPtr cam
          poke ctx avPtr
+         fmt <- case format cfg of
+                  Just "mjpeg" -> withCString "v4l2" av_find_input_format
+                  Just f -> withCString f av_find_input_format
+                  Nothing -> pure nullPtr
          r <- alloca $ \dict -> do
                 setConfig dict cfg
-                avformat_open_input ctx cstr nullPtr dict
+                avformat_open_input ctx cstr fmt dict
          when (r /= 0) $
            stringError r >>= \err ->
              fail ("ffmpeg failed opening file: " ++ err)
@@ -103,6 +113,10 @@ openCamera cam cfg =
     setupCamera avfc c =
       do setCamera avfc
          setFilename avfc c
+         when (format cfg == Just "mjpeg") $ do
+           mjpeg <- avcodec_find_decoder avCodecIdMjpeg
+           setVideoCodecID avfc avCodecIdMjpeg
+           av_format_set_video_codec avfc mjpeg
 
 openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
 openInput ipt =
