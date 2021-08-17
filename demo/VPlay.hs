@@ -117,6 +117,8 @@ nothingOnQuit action =
       (\ event ->
           case SDL.eventPayload event of
             SDL.QuitEvent -> True
+            SDL.KeyboardEvent ev ->
+              SDL.keysymKeycode (SDL.keyboardEventKeysym ev) == SDL.KeycodeEscape
             _             -> False)) action
 
 {- Return ByteString filled by image data from frame.
