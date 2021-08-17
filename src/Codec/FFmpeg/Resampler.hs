@@ -9,7 +9,6 @@ import           Control.Monad.STM
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.Marshal.Alloc
-import           Foreign.Marshal.Array
 import           Foreign.Ptr
 import           Foreign.Storable
 
@@ -54,13 +53,13 @@ makeResampler ctx inParams outParams = do
             lineSize <- malloc
             dstChannelCount <- av_get_channel_layout_nb_channels
                 (apChannelLayout outParams)
-            runWithError "Could not alloc samples"
-                (av_samples_alloc_array_and_samples dstDataPtr lineSize
-                dstChannelCount (fromIntegral dstSamples)
-                (apSampleFormat outParams) 0)
+            _ <- runWithError "Could not alloc samples"
+                     (av_samples_alloc_array_and_samples dstDataPtr lineSize
+                     dstChannelCount (fromIntegral dstSamples)
+                     (apSampleFormat outParams) 0)
             dstData <- peek dstDataPtr
-            runWithError "Error converting samples"
-                (swr_convert swr nullPtr 0 srcData srcSamples)
+            _ <- runWithError "Error converting samples"
+                     (swr_convert swr nullPtr 0 srcData srcSamples)
 
             frameSize <- getFrameSize ctx
             let convertLoop = do
@@ -68,11 +67,11 @@ makeResampler ctx inParams outParams = do
                   if outSamples < frameSize * dstChannelCount
                      then return ()
                      else do
-                       frame <- allocAudioFrame ctx
-                       outSamples <- swr_convert swr (castPtr $ hasData frame)
-                                                     frameSize nullPtr 0
+                       aframe <- allocAudioFrame ctx
+                       _outSamples <- swr_convert swr (castPtr $ hasData aframe)
+                                                      frameSize nullPtr 0
 
-                       atomically $ writeTChan frameChan frame
+                       atomically $ writeTChan frameChan aframe
                        convertLoop
 
             convertLoop
@@ -81,22 +80,22 @@ makeResampler ctx inParams outParams = do
             return ()
 
       allocAudioFrame :: AVCodecContext -> IO AVFrame
-      allocAudioFrame ctx = do
+      allocAudioFrame actx = do
         frame <- av_frame_alloc
         when (getPtr frame == nullPtr)
             (error "Error allocating an audio frame")
 
-        setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
-        setChannelLayout frame =<< getChannelLayout ctx
-        setSampleRate frame =<< getSampleRate ctx
-        fs <- (do fs <- getFrameSize ctx
+        setFormat frame . getSampleFormatInt =<< getSampleFormat actx
+        setChannelLayout frame =<< getChannelLayout actx
+        setSampleRate frame =<< getSampleRate actx
+        fs <- (do fs <- getFrameSize actx
                   if fs == 0
                     then return 1000
                     else return fs)
         setNumSamples frame fs
 
-        runWithError "Error allocating an audio buffer"
-                        (av_frame_get_buffer frame 0)
+        _ <- runWithError "Error allocating an audio buffer"
+                          (av_frame_get_buffer frame 0)
         return frame
 
       readFrame = do
@@ -113,11 +112,11 @@ initSwrContext inParams outParams = do
   when (getPtr swr == nullPtr) (error "Could not allocate resampler context")
   let set_int str i = do
         cStr <- newCString str
-        av_opt_set_int (getPtr swr) cStr (fromIntegral i) 0
+        _ <- av_opt_set_int (getPtr swr) cStr (fromIntegral i) 0
         free cStr
       set_sample_fmt str fmt = do
         cStr <- newCString str
-        av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
+        _ <- av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
         free cStr
 
   -- set_int "in_channel_count" (aoChannelCount inParams)
@@ -131,19 +130,19 @@ initSwrContext inParams outParams = do
 
   void $ runWithError "Failed to initialize the resampling context" (swr_init swr)
 
-  let get_int str = do
-        cStr <- newCString str
-        p <- malloc
-        r <- av_opt_get_int (getPtr swr) cStr 0 p
-        v <- peek p
-        free p
-        return v
-      get_sample_fmt str = do
-        cStr <- newCString str
-        p <- malloc
-        r <- av_opt_get_sample_fmt (getPtr swr) cStr 0 p
-        fmt <- peek p
-        free p
-        return fmt
+  -- let get_int str = do
+  --       cStr <- newCString str
+  --       p <- malloc
+  --       r <- av_opt_get_int (getPtr swr) cStr 0 p
+  --       v <- peek p
+  --       free p
+  --       return v
+  --     get_sample_fmt str = do
+  --       cStr <- newCString str
+  --       p <- malloc
+  --       r <- av_opt_get_sample_fmt (getPtr swr) cStr 0 p
+  --       fmt <- peek p
+  --       free p
+  --       return fmt
 
   return swr
