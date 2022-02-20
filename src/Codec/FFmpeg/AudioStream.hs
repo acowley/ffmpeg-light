@@ -2,7 +2,6 @@ module Codec.FFmpeg.AudioStream where
 
 import           Codec.FFmpeg.Enums
 import           Data.Bits
-import qualified Data.Vector.Storable as V
 import           Foreign.C.Types
 
 data AudioStream = AudioStream
@@ -75,32 +74,81 @@ avChStereoLeft = 0x20000000
 avChStereoRight :: CULong
 avChStereoRight = 0x40000000
 
+avChLayoutMono :: CULong
 avChLayoutMono =              avChFrontCenter
+
+avChLayoutStereo :: CULong
 avChLayoutStereo =            avChFrontLeft .|. avChFrontRight
+
+avChLayout2point1 :: CULong
 avChLayout2point1 =           avChLayoutStereo .|. avChLowFrequency
+
+avChLayout21 :: CULong
 avChLayout21 =               avChLayoutStereo .|. avChBackCenter
+
+avChLayoutSurround :: CULong
 avChLayoutSurround =          avChLayoutStereo .|. avChFrontCenter
+
+avChLayout3point1 :: CULong
 avChLayout3point1 =           avChLayoutSurround .|. avChLowFrequency
+
+avChLayout4point0 :: CULong
 avChLayout4point0 =           avChLayoutSurround .|. avChBackCenter
+
+avChLayout4point1 :: CULong
 avChLayout4point1 =           avChLayout4point0 .|. avChLowFrequency
+
+avChLayout22 :: CULong
 avChLayout22 =               avChLayoutStereo .|. avChSideLeft .|. avChSideRight
+
+avChLayoutQuad :: CULong
 avChLayoutQuad =              avChLayoutStereo .|. avChBackLeft .|. avChBackRight
+
+avChLayout5point0 :: CULong
 avChLayout5point0 =           avChLayoutSurround .|. avChSideLeft .|. avChSideRight
+
+avChLayout5point1 :: CULong
 avChLayout5point1 =           avChLayout5point0 .|. avChLowFrequency
+
+avChLayout5point0Back :: CULong
 avChLayout5point0Back =      avChLayoutSurround .|. avChBackLeft .|. avChBackRight
+
+avChLayout5point1Back :: CULong
 avChLayout5point1Back =      avChLayout5point0Back .|. avChLowFrequency
+
+avChLayout6point0 :: CULong
 avChLayout6point0 =           avChLayout5point0 .|. avChBackCenter
+
+avChLayout6point0Front :: CULong
 avChLayout6point0Front =     avChLayout22 .|. avChFrontLeftOfCenter .|. avChFrontRightOfCenter
+
+avChLayoutHexagonal :: CULong
 avChLayoutHexagonal =         avChLayout5point0Back .|. avChBackCenter
+
+avChLayout6point1 :: CULong
 avChLayout6point1 =           avChLayout5point1 .|. avChBackCenter
+
+avChLayout6point1Back :: CULong
 avChLayout6point1Back =      avChLayout5point1Back .|. avChBackCenter
+
+avChLayout6point1Front :: CULong
 avChLayout6point1Front =     avChLayout6point0Front .|. avChLowFrequency
+
+avChLayout7point0 :: CULong
 avChLayout7point0 =           avChLayout5point0 .|. avChBackLeft .|. avChBackRight
+
+avChLayout7point0Front :: CULong
 avChLayout7point0Front =     avChLayout5point0 .|. avChFrontLeftOfCenter .|. avChFrontRightOfCenter
+
+avChLayout7point1 :: CULong
 avChLayout7point1 =           avChLayout5point1 .|. avChBackLeft .|. avChBackRight
 -- avChLayout7point1Wide =      avChLayout5point1 .|. avChFrontLeftOfCenter .|. avChFrontRightOfCenter
 -- avChLayout7point1WideBack = avChLayout5point1Back .|. avChFrontLeftOfCenter .|. avChFrontRightOfCenter
+
+avChLayoutOctagonal :: CULong
 avChLayoutOctagonal =         avChLayout5point0 .|. avChBackLeft .|. avChBackCenter .|. avChBackRight
 -- avChLayoutHexadecagonal =     avChLayoutOctagonal .|. avChWideLeft .|. avChWideRight .|. avChTopBackLeft .|. avChTopBackRight .|. avChTopBackCenter .|. avChTopFrontCenter .|. avChTopFrontLeft .|. avChTopFrontRight
+
+avChLayoutStereoDownmix :: CULong
 avChLayoutStereoDownmix =    avChStereoLeft .|. avChStereoRight
 

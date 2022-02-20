@@ -151,7 +151,7 @@ runWithError msg toRun = do
   when (r < 0) $ do
     let len = 100 -- I have no idea how long this string should be so this is a guess
     errCStr <- mallocArray len
-    av_strerror r errCStr (fromIntegral len)
+    _ <- av_strerror r errCStr (fromIntegral len)
     errStr <- peekCString errCStr
     free errCStr
     avError $ msg ++ " : " ++ errStr

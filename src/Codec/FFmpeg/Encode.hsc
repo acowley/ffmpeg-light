@@ -26,10 +26,7 @@ import Foreign.C.String
 import Foreign.C.Types
 import Foreign.ForeignPtr (touchForeignPtr)
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array (advancePtr)
 import Foreign.Marshal.Utils
-
-import Codec.FFmpeg.Internal.Debug
 
 import Foreign.Ptr
 import Foreign.Storable
@@ -350,10 +347,11 @@ initAudioStream params oc = do
 
   setChannelLayout ctx (apChannelLayout params)
 
-  runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
+  _ <- runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
 
   codecParams <- getCodecParams st
-  runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+  _ <- runWithError "Could not copy params"
+         (avcodec_parameters_from_context codecParams ctx)
 
   return (st, cod, ctx)
 
@@ -546,7 +544,7 @@ avWriter outputFormat sp fname = do
   oc <- allocOutputContext outputFormat fname
   outputFormat <- getOutputFormat oc
   audioCodecId <- getAudioCodecID outputFormat
-  videoCodecId <- getVideoCodecID outputFormat
+  _videoCodecId <- getVideoCodecID outputFormat
 
   -- Initializing the streams needs to be done before opening the file
   -- and checking the header because it can modify fields that are used
@@ -556,7 +554,7 @@ avWriter outputFormat sp fname = do
   mAudioStream <- withAudioParams sp (return Nothing) $ \ap ->
                     (Just <$> initAudioStream ap oc)
   avio_open_check oc fname
-  numStreams <- getNumStreams oc
+  _numStreams <- getNumStreams oc
   write_header_check oc
 
   alreadyClosedRef <- newIORef False
@@ -594,7 +592,7 @@ avWriter outputFormat sp fname = do
         frameNum <- newIORef (0::Int)
 
         let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
-        fps <- getFps ctx
+        _fps <- getFps ctx
 
           -- The stream time_base can be changed by the call to
           -- 'write_header_check', so we read it back here to establish a way
@@ -706,7 +704,7 @@ avWriter outputFormat sp fname = do
                       -> AVCodec
                       -> AVCodecContext
                       -> IO (Maybe AVFrame -> IO ())
-      initializeAudio st codec ctx = do
+      initializeAudio st _codec ctx = do
         if audioCodecId /= avCodecIdNone
           then do
             pkt <- av_packet_alloc
@@ -729,14 +727,14 @@ avWriter outputFormat sp fname = do
                       -- TODO: Not sure this pts will be exactly accurate.
                       -- Also, we need to set duration too because it doesn't seem to be set.
                       setPts pkt =<< readIORef lastPts
-                      runWithError "Error while writing audio frame"
-                                  (av_interleaved_write_frame oc pkt)
+                      _ <- runWithError "Error while writing audio frame"
+                             (av_interleaved_write_frame oc pkt)
                       return ()
                 writeAudioFrame :: Maybe AVFrame -> IO ()
                 writeAudioFrame Nothing = do
                   read_pkts
                   writeClose
-                  codec_close ctx
+                  _ <- codec_close ctx
                   return ()
                 writeAudioFrame (Just frame) = writeAudioFrame' frame
 
@@ -753,8 +751,8 @@ avWriter outputFormat sp fname = do
                   modifyIORef lastPts (const newPts)
                   modifyIORef frameNum (+ fromIntegral numSamples)
 
-                  runWithError "Error encoding audio"
-                      (avcodec_send_frame ctx frame)
+                  _ <- runWithError "Error encoding audio"
+                         (avcodec_send_frame ctx frame)
                   read_pkts
             return writeAudioFrame
           else
