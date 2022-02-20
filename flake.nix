@@ -12,7 +12,7 @@
       let pkgs = import nixpkgs { 
             inherit system;
           };
-          compiler = "ghc8104";
+          compiler = "ghc8107";
           hspkgs = pkgs.haskell.packages.${compiler};
           ffmpeg-light = hspkgs.callPackage (import ./default.nix) { nix-filter = nix-filter.lib; };
           ghc = hspkgs.ghc.withHoogle (ps: ffmpeg-light.passthru.getBuildInputs.haskellBuildInputs);
@@ -20,7 +20,8 @@
         devShell = pkgs.mkShell {
           buildInputs = [
             pkgs.SDL2 pkgs.ffmpeg pkgs.pkgconfig
-            ghc hspkgs.cabal-install hspkgs.haskell-language-server
+            ghc hspkgs.cabal-install
+            # hspkgs.haskell-language-server
           ];
         };
         packages.ffmpeg-light = ffmpeg-light;
