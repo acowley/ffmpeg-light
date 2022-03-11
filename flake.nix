@@ -12,8 +12,20 @@
       let pkgs = import nixpkgs { 
             inherit system;
           };
-          compiler = "ghc8107";
-          hspkgs = pkgs.haskell.packages.${compiler};
+          # compiler = "8107";
+          compiler = "921";
+          hspkgs =
+            let doJailbreak = pkgs.haskell.lib.doJailbreak;
+                dontCheck = pkgs.haskell.lib.dontCheck;
+            in pkgs.haskell.packages."ghc${compiler}".override {
+            overrides = final: prev:
+              if compiler == "921"
+              then {
+                linear = prev.callHackage "linear" "1.21.8" {};
+                sdl2 = dontCheck (prev.callHackage "sdl2" "2.5.3.1" {});
+              }
+              else { };
+          };
           ffmpeg-light = hspkgs.callPackage (import ./default.nix) { nix-filter = nix-filter.lib; };
           ghc = hspkgs.ghc.withHoogle (ps: ffmpeg-light.passthru.getBuildInputs.haskellBuildInputs);
       in {
