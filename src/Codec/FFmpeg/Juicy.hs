@@ -9,8 +9,10 @@ import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Internal.Linear (V2(..))
 import Codec.FFmpeg.Types
 import Control.Arrow (first)
-import Control.Monad ((>=>))
+import Control.Monad ((>=>), guard)
 import Control.Monad.Except
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe
 import Data.Foldable (traverse_)
 import qualified Data.Vector.Storable as V

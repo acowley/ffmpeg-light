@@ -14,6 +14,7 @@ import           Codec.FFmpeg.Types
 import           Control.Arrow             (first)
 import           Control.Monad             (void, when)
 import           Control.Monad.Except
+import           Control.Monad.IO.Class    (MonadIO(liftIO))
 import           Control.Monad.Trans.Maybe
 import           Foreign.C.String
 import           Foreign.C.Types

@@ -18,6 +18,8 @@ module Codec.FFmpeg.Probe (
 
 import Control.Applicative ( Applicative )
 import Control.Monad.Catch ( MonadMask, finally )
+import Control.Monad ( liftM )
+import Control.Monad.IO.Class ( MonadIO )
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
 import Data.Int ( Int64 )
@@ -173,4 +175,3 @@ foreign import ccall "avcodec_get_name"
 
 foreign import ccall "av_dict_get"
   av_dict_get :: AVDictionary -> CString -> Ptr () -> CInt -> IO (Ptr ())
-
