@@ -6,10 +6,9 @@ import Codec.FFmpeg.Common
 import Codec.FFmpeg.Decode
 import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
+import Codec.FFmpeg.Probe
 import Codec.FFmpeg.Internal.Linear (V2(..))
 import Codec.FFmpeg.Types
-import Control.Arrow (first)
-import Control.Monad ((>=>), guard)
 import Control.Monad.Except
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (lift)
@@ -19,7 +18,7 @@ import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as VM
 import Foreign.C.Types
 import Foreign.Storable (sizeOf)
-import Data.Maybe (maybe)
+import Data.List.NonEmpty (NonEmpty, singleton, (<|))
 
 
 -- | Convert 'AVFrame' to a 'Vector'.
@@ -114,29 +113,54 @@ juicyPixelStride :: forall a proxy. Pixel a => proxy a -> Int
 juicyPixelStride _ =
   sizeOf (undefined :: PixelBaseComponent a) * componentCount (undefined :: a)
 
+type Metadata = NonEmpty (String, String)
+
+-- avDictionaryToMetadata :: MonadIO m => AVDictionary -> m (Maybe Metadata)
+-- avDictionaryToMetadata avdict = liftIO $ do
+--   nullStr <- newCString ""
+--   nonEmpty <$> checkKeyVal nullStr (AVDictionaryEntry nullPtr) []
+--   where
+--     checkKeyVal nullStr prevEntry lst = do
+--       avde@(AVDictionaryEntry ptrres) <- av_dict_get avdict nullStr prevEntry av_dict_ignore_suffix
+--       if nullPtr == ptrres then pure lst else do
+--         key <- peekCString  =<< getKey avde
+--         val <- peekCString  =<<  getValue avde
+--         checkKeyVal nullPtr prevEntry ((key, val) : lst)
+
+mapToResult :: (MonadIO m, JuicyPixelFormat p) => m (a1, b, Maybe AVDictionary) -> ((AVFrame -> IO (Maybe (Image p))) -> a1 -> MaybeT m2 a2) -> m (m2 (Maybe a2), b, Maybe Metadata)
+mapToResult f aux = do
+  (frame, cleanup, avdict) <- f
+  let frameResult = runMaybeT (aux toJuicyImage frame)
+  metadata <- dictFoldM folder Nothing `mapM` avdict
+  pure (frameResult, cleanup, join metadata)
+  where
+    folder Nothing kv = pure (Just (singleton kv))
+    folder (Just nes) kv = pure (Just (kv <| nes))
+
 -- | Read frames from a video stream.
 imageReaderT :: forall m p.
                 (Functor m, MonadIO m, MonadError String m,
                  JuicyPixelFormat p)
-             => InputSource -> m (IO (Maybe (Image p)), IO ())
-imageReaderT = fmap (first (runMaybeT . aux toJuicyImage))
-            . frameReader (juicyPixelFormat ([] :: [p]))
+             => InputSource -> m (IO (Maybe (Image p)), IO (), Maybe Metadata)
+imageReaderT is = mapToResult (frameReader (juicyPixelFormat ([] :: [p])) is) aux
+
+  --fmap (first3 (runMaybeT . aux toJuicyImage))
+--             . frameReader (juicyPixelFormat ([] :: [p]))
   where aux g x = MaybeT x >>= MaybeT . g
 
 -- | Read frames from a video stream. Errors are thrown as
 -- 'IOException's.
 imageReader :: JuicyPixelFormat p
-            => InputSource -> IO (IO (Maybe (Image p)), IO ())
-imageReader = (>>= either error return) . runExceptT . imageReaderT
+            => InputSource -> IO (IO (Maybe (Image p)), IO (), Maybe Metadata)
+imageReader = either error return <=< (runExceptT . imageReaderT)
 
 -- | Read time stamped frames from a video stream. Time is given in
 -- seconds from the start of the stream.
 imageReaderTimeT :: forall m p.
                     (Functor m, MonadIO m, MonadError String m,
                      JuicyPixelFormat p)
-                 => InputSource -> m (IO (Maybe (Image p, Double)), IO ())
-imageReaderTimeT = fmap (first (runMaybeT . aux toJuicyImage))
-                 . frameReaderTime (juicyPixelFormat ([] :: [p]))
+                 => InputSource -> m (IO (Maybe (Image p, Double)), IO (), Maybe Metadata)
+imageReaderTimeT is = mapToResult (frameReaderTime (juicyPixelFormat ([] :: [p])) is) aux
   where aux g x = do (f,t) <- MaybeT x
                      f' <- MaybeT $ g f
                      return (f', t)
@@ -145,8 +169,8 @@ imageReaderTimeT = fmap (first (runMaybeT . aux toJuicyImage))
 -- seconds from the start of the stream. Errors are thrown as
 -- 'IOException's.
 imageReaderTime :: JuicyPixelFormat p
-                => InputSource -> IO (IO (Maybe (Image p, Double)), IO ())
-imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
+                => InputSource -> IO (IO (Maybe (Image p, Double)), IO (), Maybe Metadata)
+imageReaderTime = either error return <=< runExceptT . imageReaderTimeT
 
 -- | Open a target file for writing a video stream. When the returned
 -- function is applied to 'Nothing', the output stream is closed. Note
@@ -161,8 +185,8 @@ imageReaderTime = (>>= either error return) . runExceptT . imageReaderTimeT
 imageWriter :: forall p. JuicyPixelFormat p
             => EncodingParams -> FilePath -> IO (Maybe (Image p) -> IO ())
 imageWriter ep f = do
-  videoWriter <- frameWriter ep f
-  return $ (. fmap fromJuciy) videoWriter
+  vw <- videoWriter ep f
+  return $ (. fmap fromJuciy) vw
 
 -- | Util function to convert a JuicyPixels image to the same structure
 -- used by 'frameWriter'

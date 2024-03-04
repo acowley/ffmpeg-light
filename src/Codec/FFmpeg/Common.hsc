@@ -15,6 +15,10 @@ import           Foreign.Marshal.Array     (advancePtr, mallocArray)
 import           Foreign.Ptr
 import           Foreign.Storable
 
+-- | libavdevice still requries registration
+foreign import ccall "avdevice_register_all"
+  avdevice_register_all :: IO ()
+
 foreign import ccall "avcodec_open2"
   open_codec :: AVCodecContext -> AVCodec -> Ptr AVDictionary -> IO CInt
 
@@ -36,7 +40,7 @@ foreign import ccall "av_init_packet"
 foreign import ccall "av_packet_alloc"
   av_packet_alloc :: IO AVPacket
 
-foreign import ccall "av_free_packet"
+foreign import ccall "av_packet_unref"
   free_packet :: AVPacket -> IO ()
 
 foreign import ccall "av_malloc"
@@ -57,9 +61,6 @@ foreign import ccall "sws_scale"
             -> Ptr (Ptr CUChar) -> Ptr CInt -> CInt -> CInt
             -> Ptr (Ptr CUChar) -> Ptr CInt -> IO CInt
 
-foreign import ccall "av_get_channel_layout_nb_channels"
-  av_get_channel_layout_nb_channels :: CULong -> IO CInt
-
 foreign import ccall "swr_alloc"
   swr_alloc :: IO SwrContext
 
@@ -77,6 +78,12 @@ foreign import ccall "av_opt_set_sample_fmt"
 
 foreign import ccall "av_opt_get_sample_fmt"
   av_opt_get_sample_fmt :: Ptr () -> CString -> CInt -> Ptr AVSampleFormat -> IO CInt
+
+foreign import ccall "av_opt_get_chlayout"
+  av_opt_get_chlayout :: Ptr () -> CString -> CInt -> Ptr AVChannelLayout -> IO CInt
+
+foreign import ccall "av_opt_set_chlayout"
+  av_opt_set_chlayout :: Ptr () -> CString -> AVChannelLayout -> CInt -> IO CInt
 
 foreign import ccall "avcodec_send_frame"
   avcodec_send_frame :: AVCodecContext -> AVFrame -> IO CInt
@@ -148,14 +155,16 @@ instance Exception FFmpegException
 runWithError :: String -> IO CInt -> IO CInt
 runWithError msg toRun = do
   r <- toRun
-  when (r < 0) $ do
-    let len = 100 -- I have no idea how long this string should be so this is a guess
-    errCStr <- mallocArray len
-    av_strerror r errCStr (fromIntegral len)
-    errStr <- peekCString errCStr
-    free errCStr
-    avError $ msg ++ " : " ++ errStr
+  when (r < 0) (getError msg r)
   return r
+
+getError msg r = do
+  let len = 100 -- I have no idea how long this string should be so this is a guess
+  errCStr <- mallocArray len
+  av_strerror r errCStr (fromIntegral len)
+  errStr <- peekCString errCStr
+  free errCStr
+  avError $ msg ++ " : " ++ errStr
 
 avError :: String -> IO a
 avError msg = throwIO $ FFmpegException $ msg
@@ -341,3 +350,6 @@ listSupportedSampleRates codec = do
                         v <- peek ptr
                         return $ v == 0
                  )
+
+first3 :: (t -> a) -> (t, b, c) -> (a, b, c)
+first3 f (a,b,c) = (f a,b,c)

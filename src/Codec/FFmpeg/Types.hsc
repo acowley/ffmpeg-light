@@ -9,6 +9,7 @@ import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Alloc (malloc)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -30,6 +31,8 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField OutputFormat, AVOutputFormat
 #mkField IOContext, AVIOContext
 #mkField InputFormat, AVInputFormat
+#mkField VideoCodec, AVCodec
+#mkField AudioCodec, AVCodec
 
 #hasField AVFormatContext, NumStreams, nb_streams
 #hasField AVFormatContext, Streams, streams
@@ -37,11 +40,18 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFormatContext, InputFormat, iformat
 #hasField AVFormatContext, IOContext, pb
 #hasField AVFormatContext, VideoCodecID, video_codec_id
+#hasField AVFormatContext, VideoCodec, video_codec
+#hasField AVFormatContext, AudioCodec, audio_codec
 
-setFilename :: AVFormatContext -> String -> IO ()
-setFilename ctx fn =
+structMetadata :: (MonadIO m, HasPtr a) => a -> m (Maybe AVDictionary)
+structMetadata ctx = do
+  dict@(AVDictionary dictPtr) <- liftIO $ (#peek AVFormatContext, metadata) (getPtr ctx)
+  pure $ if dictPtr == nullPtr then Nothing else (Just dict)
+
+setUrl :: AVFormatContext -> String -> IO ()
+setUrl ctx fn =
     do let ptr  = getPtr ctx
-           dst   = (#ptr AVFormatContext, filename) ptr
+           dst   = (#ptr AVFormatContext, url) ptr
            bytes = map (fromIntegral . fromEnum) fn
        zipWithM_ (pokeElemOff dst) bytes [(0 :: CInt) ..]
 
@@ -69,6 +79,14 @@ foreign import ccall "avformat_alloc_context"
 mallocAVFormatContext :: IO AVFormatContext
 mallocAVFormatContext = AVFormatContext <$> avformat_alloc_context
 
+newtype AVChannelLayout = AVChannelLayout (Ptr ()) deriving (Storable, HasPtr)
+
+#mkField ChannelOrder, AVChannelOrder
+#mkField Channels, CInt
+
+#hasField AVChannelLayout, ChannelOrder, order
+#hasField AVChannelLayout, Channels, nb_channels
+
 newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 
 foreign import ccall "avcodec_alloc_context3"
@@ -88,12 +106,13 @@ foreign import ccall "avcodec_alloc_context3"
 #mkField TicksPerFrame, CInt
 #mkField RawAspectRatio, AVRational
 #mkField SampleRate, CInt
-#mkField ChannelLayout, CULong
-#mkField Channels, CInt
+#mkField ChannelLayout, AVChannelLayout
 #mkField FrameSize, CInt
 #mkField FrameRate, AVRational
+#mkField Codec, AVCodec
 
 #hasField AVCodecContext, BitRate, bit_rate
+#hasField AVCodecContext, Codec, codec
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
 #hasField AVCodecContext, TimeBase, time_base
@@ -106,7 +125,6 @@ foreign import ccall "avcodec_alloc_context3"
 #hasField AVCodecContext, RawAspectRatio, sample_aspect_ratio
 #hasField AVCodecContext, SampleRate, sample_rate
 #hasField AVCodecContext, ChannelLayout, channel_layout
-#hasField AVCodecContext, Channels, channels
 #hasField AVCodecContext, SampleFormat, sample_fmt
 #hasField AVCodecContext, FrameSize, frame_size
 #hasField AVCodecContext, FrameRate, framerate
@@ -135,17 +153,25 @@ foreign import ccall "avcodec_parameters_from_context"
                                   -> AVCodecContext
                                   -> IO CInt
 
+foreign import ccall "avcodec_parameters_to_context"
+  avcodec_parameters_to_context :: AVCodecContext
+                                  -> AVCodecParameters
+                                  -> IO CInt
+
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #mkField Id, CInt
 #mkField CodecContext, AVCodecContext
 #mkField StreamIndex, CInt
 #mkField CodecParams, AVCodecParameters
+#mkField Dictionary, AVDictionary
+
+-- Update this to include side data & metadata in the structure
 
 #hasField AVStream, Id, id
 #hasField AVStream, TimeBase, time_base
-#hasField AVStream, CodecContext, codec
 #hasField AVStream, StreamIndex, index
 #hasField AVStream, CodecParams, codecpar
+#hasField AVStream, Dictionary, metadata
 
 newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString
@@ -165,10 +191,20 @@ newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodec, SupportedSampleRates, supported_samplerates
 #hasField AVCodec, Capabilities, capabilities
 
+newtype AVDictionaryEntry = AVDictionaryEntry (Ptr ()) deriving (Storable, HasPtr)
+#mkField Key, CString
+#mkField Value, CString
+
+#hasField AVDictionaryEntry, Key, key
+#hasField AVDictionaryEntry, Value, value
+
+
+-- Use av_dict_get and av_dict_set to actually access this structure
 newtype AVDictionary = AVDictionary (Ptr ()) deriving (Storable, HasPtr)
+  
 newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #mkField Pts, CLong
-#mkField PktPts, CLong
+#mkField PktDts, CLong
 #mkField LineSize, CInt
 #mkField Data, (Ptr (Ptr ()))
 #mkField ExtendedData, (Ptr (Ptr ()))
@@ -181,17 +217,13 @@ newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFrame, Height, height
 #hasField AVFrame, LineSize, linesize
 #hasField AVFrame, Pts, pts
-#hasField AVFrame, PktPts, pkt_pts
+#hasField AVFrame, PktDts, pkt_dts
 #hasField AVFrame, Data, data
 #hasField AVFrame, ExtendedData, extended_data
 #hasField AVFrame, NumSamples, nb_samples
 #hasField AVFrame, Format, format
-#hasField AVFrame, Channels, channels
-#hasField AVFrame, ChannelLayout, channel_layout
+#hasField AVFrame, ChannelLayout, ch_layout
 #hasField AVFrame, SampleRate, sample_rate
-
-newtype AVPicture = AVPicture (Ptr ()) deriving (Storable, HasPtr)
-#hasField AVPicture, Data, data
 
 newtype SwsContext = SwsContext (Ptr ()) deriving (Storable, HasPtr)
 newtype AVOutputFormat = AVOutputFormat (Ptr ()) deriving (Storable, HasPtr)
@@ -245,9 +277,6 @@ newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
 -- | @sizeof@ the 'AVPacket' structure in bytes.
 packetSize :: Int
 packetSize = #size AVPacket
-
-pictureSize :: Int
-pictureSize = #size AVPicture
 
 newtype SwrContext = SwrContext (Ptr ()) deriving (Storable, HasPtr)
 

@@ -16,7 +16,7 @@ import Codec.Picture
 import Control.Monad (when, void)
 import Data.Bits
 import Data.IORef
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Ord (comparing)
 import Data.Traversable (for)
 import Data.Vector.Storable (Vector)
@@ -49,10 +49,6 @@ foreign import ccall "avcodec_find_encoder_by_name"
 
 foreign import ccall "av_opt_set"
   av_opt_set :: Ptr () -> CString -> CString -> CInt -> IO CInt
-
-foreign import ccall "avcodec_encode_video2"
-  avcodec_encode_video2 :: AVCodecContext -> AVPacket -> AVFrame -> Ptr CInt
-                        -> IO CInt
 
 foreign import ccall "av_image_alloc"
   av_image_alloc :: Ptr (Ptr CUChar) -> Ptr CInt -> CInt -> CInt
@@ -144,7 +140,7 @@ data AVEncodingParams = AVEncodingParams
   -- ^ If 'Nothing', automatically chose a pixel format
   -- based on the output codec. If 'Just', force the
   -- selected pixel format.
-  , avepChannelLayout :: CULong
+  , avepChannelLayout :: AVChannelLayout
   -- ^ Channel layout for the audio stream
   , avepSampleRate :: CInt
   -- ^ Sample rate for the audio stream
@@ -166,7 +162,7 @@ data AVEncodingParams = AVEncodingParams
 
 -- | Minimal parameters describing the desired audio/video output.
 data AEncodingParams = AEncodingParams
-  { aepChannelLayout :: CULong
+  { aepChannelLayout :: AVChannelLayout
   -- ^ Channel layout for the audio stream
   , aepSampleRate :: CInt
   -- ^ Sample rate for the audio stream
@@ -290,7 +286,8 @@ initVideoStream vp oc = do
   let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
       frameRate = AVRational (fromIntegral $ vpFps vp) 1
   setTimeBase st framePeriod
-  ctx <- getCodecContext st
+  ctx <- avcodec_alloc_context3 cod
+  when (getPtr ctx == nullPtr) (error "Failed to allocate codec context")
   setWidth ctx (vpWidth vp)
   setHeight ctx (vpHeight vp)
   setTimeBase ctx framePeriod
@@ -305,6 +302,7 @@ initVideoStream vp oc = do
   -- Some formats want stream headers to be separate
   needsHeader <- checkFlag avfmtGlobalheader <$>
                  (getOutputFormat oc >>= getFormatFlags)
+
   when needsHeader $
 #if LIBAVFORMAT_VERSION_MAJOR < 57
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
@@ -324,6 +322,9 @@ initVideoStream vp oc = do
   rOpen <- open_codec ctx cod nullPtr
   when (rOpen < 0) (error "Couldn't open codec")
 
+  codecParams <- getCodecParams st
+  runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+
   return (st, ctx)
 
 initAudioStream :: AudioParams
@@ -331,7 +332,6 @@ initAudioStream :: AudioParams
                 -> IO (AVStream, AVCodec, AVCodecContext)
 initAudioStream params oc = do
   codecId <- getAudioCodecID =<< getOutputFormat oc
-  print codecId
   cod <- avcodec_find_encoder codecId
   when (getPtr cod == nullPtr) (avError "Could not find audio codec")
 
@@ -354,6 +354,12 @@ initAudioStream params oc = do
 
   codecParams <- getCodecParams st
   runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+
+#if LIBAVFORMAT_VERSION_MAJOR < 57
+  getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
+#else
+  getCodecFlags ctx >>= setCodecFlags ctx . (.|. avCodecFlagGlobalHeader)
+#endif
 
   return (st, cod, ctx)
 
@@ -412,10 +418,16 @@ avio_close_check oc = do r <- getIOContext oc >>= avio_close
 -- data; 'False' otherwise.
 encode_video_check :: AVCodecContext -> AVPacket -> Maybe AVFrame -> IO Bool
 encode_video_check ctx pkt frame =
-  alloca $ \gotOutput -> do
-    r <- avcodec_encode_video2 ctx pkt frame' gotOutput
-    when (r < 0) (error "Error encoding frame")
-    (> 0) <$> peek gotOutput
+  do
+    --r <- avcodec_encode_video2 ctx pkt frame' gotOutput
+    r <- avcodec_send_frame ctx frame'
+    if (r == 0 || r == c_AVERROR_EAGAIN) then do 
+      e <- avcodec_receive_packet ctx pkt
+      pure (e /= c_AVERROR_EAGAIN)
+    else if r == c_AVERROR_EOF then
+      pure False
+    else
+      getError "Error encoding frame" r
   where frame' = fromMaybe (AVFrame nullPtr) frame
 
 -- | Allocate the stream private data and write the stream header to
@@ -555,10 +567,12 @@ avWriter outputFormat sp fname = do
                     (Just <$> initVideoStream vp oc)
   mAudioStream <- withAudioParams sp (return Nothing) $ \ap ->
                     (Just <$> initAudioStream ap oc)
+                    
   avio_open_check oc fname
   numStreams <- getNumStreams oc
+  withCString fname (\str -> av_dump_format oc 0 str 1)
   write_header_check oc
-
+  
   alreadyClosedRef <- newIORef False
   let writeClose = do
         alreadyClosed <- readIORef alreadyClosedRef

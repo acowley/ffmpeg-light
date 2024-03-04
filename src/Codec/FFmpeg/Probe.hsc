@@ -8,12 +8,12 @@ module Codec.FFmpeg.Probe (
     withAvFile, nbStreams, formatName, formatMetadata, duration,
 
     -- * Streams
-    AvStreamT, withStream, codecContext, codecName,
+    AvStreamT, withStream, codecName,
     codecMediaTypeName, streamBitrate, streamMetadata,
     codec, streamImageSize,
 
     -- * Dictionaries
-    dictFoldM_
+    dictFoldM_, dictFoldM
     ) where
 
 import Control.Applicative ( Applicative )
@@ -23,6 +23,7 @@ import Control.Monad.IO.Class ( MonadIO )
 import Control.Monad.Reader
 import Control.Monad.Trans.Except
 import Data.Int ( Int64 )
+import Data.Maybe (fromMaybe)
 import Foreign.C.String ( CString, peekCString, withCString )
 import Foreign.C.Types ( CInt(..) )
 import Foreign.Marshal.Utils ( with )
@@ -34,6 +35,7 @@ import Codec.FFmpeg.Decode
 import Codec.FFmpeg.Types
 
 #include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
 
 -------------------------------------------------------------------------------
 -- avformat - level stuff
@@ -96,12 +98,12 @@ withStream sid f = nbStreams >>= \ns -> if sid >= ns
         streams <- liftIO $ (#peek AVFormatContext, streams) (getPtr ctx)
         liftIO (peekElemOff streams sid) >>= runReaderT (unAvStreamT f)
 
-codecContext :: MonadIO m => AvStreamT m (Maybe AVCodecContext)
-codecContext = do
-    p <- ask >>= (liftIO . (#peek AVStream, codec) . getPtr)
-    if (p /= nullPtr)
-        then return $ Just $ AVCodecContext p
-        else return Nothing
+-- codecContext :: MonadIO m => AvStreamT m (Maybe AVCodecContext)
+-- codecContext = do
+--     p <- ask >>= (liftIO . (#peek AVStream, codec) . getPtr)
+--     if (p /= nullPtr)
+--         then return $ Just $ AVCodecContext p
+--         else return Nothing
 
 codecMediaTypeName :: MonadIO m => AVCodecContext -> AvStreamT m String
 codecMediaTypeName cctx = liftIO $
@@ -144,18 +146,47 @@ dictFoldM_ f d =
     let
         flags = (#const AV_DICT_IGNORE_SUFFIX + AV_DICT_DONT_STRDUP_KEY + AV_DICT_DONT_STRDUP_VAL)
         next ep = do
-            e' <- liftIO $ withCString "" $ \s -> av_dict_get d s ep flags
+            ave@(AVDictionaryEntry e') <- liftIO $ withCString "" $ \s -> av_dict_get d s ep flags
             if (e' == nullPtr)
                 then return ()
                 else do
                     k <- liftIO $ (#peek AVDictionaryEntry, key) e' >>= peekCString
                     v <- liftIO $ (#peek AVDictionaryEntry, value) e' >>= peekCString
                     f (k, v)
-                    next e'
+                    next ave
     in do
         -- e <- liftIO $ malloc >>= \m -> poke m nullPtr >> return m
-        next nullPtr
+        next (AVDictionaryEntry nullPtr)
 
+dictFoldM
+    :: MonadIO m
+    => (b -> (String, String) -> m b)
+    -> b
+    -> AVDictionary
+    -> m b
+dictFoldM f b d =
+    let
+        flags = (#const AV_DICT_IGNORE_SUFFIX + AV_DICT_DONT_STRDUP_KEY + AV_DICT_DONT_STRDUP_VAL)
+        next ep = do
+            ave@(AVDictionaryEntry e') <- liftIO $ withCString "" $ \s -> av_dict_get d s ep flags
+            if (e' == nullPtr)
+                then return b
+                else do
+                    k <- liftIO $ (#peek AVDictionaryEntry, key) e' >>= peekCString
+                    v <- liftIO $ (#peek AVDictionaryEntry, value) e' >>= peekCString
+                    f b (k, v)
+                    next ave
+    in do
+        -- e <- liftIO $ malloc >>= \m -> poke m nullPtr >> return m
+        next (AVDictionaryEntry nullPtr)
+
+getDictionaryEntry :: AVDictionary -> String -> Maybe AVDictionaryEntry -> Int -> IO (Maybe AVDictionaryEntry)
+getDictionaryEntry avdict key prevEntry flags = do
+  let prevPtr = fromMaybe (AVDictionaryEntry nullPtr) prevEntry
+  withCString key $ \keyCString -> do 
+    avde@(AVDictionaryEntry entryPtr) <- av_dict_get avdict keyCString prevPtr (fromIntegral flags)
+    pure (if entryPtr == nullPtr then Nothing else (Just avde))
+  
 -------------------------------------------------------------------------------
 -- helpers
 -------------------------------------------------------------------------------
@@ -174,4 +205,9 @@ foreign import ccall "avcodec_get_name"
   avcodec_get_name :: AVCodecID -> IO CString
 
 foreign import ccall "av_dict_get"
-  av_dict_get :: AVDictionary -> CString -> Ptr () -> CInt -> IO (Ptr ())
+  av_dict_get :: AVDictionary
+                  -> CString
+                  -> AVDictionaryEntry
+                  -> CInt
+                  -> IO AVDictionaryEntry
+

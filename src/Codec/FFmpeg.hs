@@ -19,12 +19,8 @@ import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Juicy
 import Codec.FFmpeg.Resampler
 import Codec.FFmpeg.Types
+import Codec.FFmpeg.Common (avdevice_register_all)
 import Foreign.C.Types (CInt(..))
-
-foreign import ccall "av_register_all" av_register_all :: IO ()
-foreign import ccall "avdevice_register_all" avdevice_register_all :: IO ()
-
--- foreign import ccall "avcodec_register_all" avcodec_register_all :: IO (
 
 foreign import ccall "av_log_set_level" av_log_set_level :: CInt -> IO ()
 
@@ -37,4 +33,4 @@ setLogLevel (LogLevel l) = av_log_set_level l
 -- initially set to @quiet@. If you would like the standard ffmpeg
 -- debug level, call @setLogLevel avLogInfo@ after @initFFmpeg@.
 initFFmpeg :: IO ()
-initFFmpeg = av_register_all >> avdevice_register_all >> setLogLevel avLogQuiet
+initFFmpeg = avdevice_register_all >> setLogLevel avLogQuiet

@@ -530,3 +530,43 @@ newtype AVSampleFormat = AVSampleFormat CInt deriving (Eq, Bits, Storable)
 
 getSampleFormatInt :: AVSampleFormat -> CInt
 getSampleFormatInt (AVSampleFormat i) = i
+
+newtype AVChannelOrder = AVChannelOrder CInt deriving (Eq, Bits, Storable)
+#enum AVChannelOrder, AVChannelOrder \
+  , AV_CHANNEL_ORDER_UNSPEC\
+  , AV_CHANNEL_ORDER_NATIVE\
+  , AV_CHANNEL_ORDER_CUSTOM\
+  , AV_CHANNEL_ORDER_AMBISONIC
+
+getChannelOrderInt :: AVChannelOrder -> CInt
+getChannelOrderInt (AVChannelOrder i) = i
+
+av_dict_match_case :: CInt
+av_dict_match_case = 1   -- Only get an entry with exact-case key match. Only relevant in av_dict_get().
+
+av_dict_ignore_suffix :: CInt
+av_dict_ignore_suffix = 2   -- Return first entry in a dictionary whose first part corresponds to the search key,
+                            -- ignoring the suffix of the found key string. Only relevant in av_dict_get().
+
+av_dict_dont_strdup_key :: CInt
+av_dict_dont_strdup_key = 4   -- Take ownership of a key that's been
+                                   -- allocated with av_malloc() or another memory allocation function.
+av_dict_dont_strdup_val :: CInt
+av_dict_dont_strdup_val = 8   -- Take ownership of a value that's been
+                                    -- allocated with av_malloc() or another memory allocation function.
+
+av_dict_dont_overwrite :: CInt
+av_dict_dont_overwrite = 16   -- Don't overwrite existing entries.
+
+av_dict_append :: CInt
+av_dict_append         = 32   -- If the entry already exists, append to it.  Note that no
+                                    -- delimiter is added, the strings are simply concatenated.
+
+av_dict_multikey :: CInt
+av_dict_multikey       = 64   -- Allow to store several equal keys in the dictionary
+
+c_AVERROR_EAGAIN :: CInt
+c_AVERROR_EAGAIN = #const AVERROR(EAGAIN)
+
+c_AVERROR_EOF :: CInt
+c_AVERROR_EOF = #const AVERROR_EOF

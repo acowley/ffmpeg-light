@@ -11,7 +11,7 @@ import Control.Monad (unless)
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
 firstFrame = do initFFmpeg
-                (getFrame, cleanup) <- imageReader (File "myVideo.mov")
+                (getFrame, cleanup, maybeMetadata) <- imageReader (File "myVideo.mov")
                 (fmap ImageRGB8 <$> getFrame) <* cleanup
 
 -- | Generate a video that pulses from light to dark.
@@ -34,27 +34,29 @@ pulseVid =
 
 -- | Generate a video that fades from white to gray to white.
 testEncode :: IO ()
-testEncode = initFFmpeg >> pulseVid >> putStrLn "All done!"
+testEncode = initFFmpeg >> setLogLevel avLogTrace >> pulseVid >> putStrLn "All done!"
 
 -- | Decoding example. Try changing 'ImageRGB8' to 'ImageY8' in the
 -- 'savePngImage' lines to automatically decode to grayscale images!
 testDecode :: FilePath -> IO ()
 testDecode vidFile =
-  do initFFmpeg
-     (getFrame, cleanup) <- imageReaderTime (File vidFile)
-     frame1 <- getFrame
-     case frame1 of
-       Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
-                           savePngImage "frame1.png" (ImageRGB8 avf)
-       Nothing -> putStrLn "No frame for me :("
-     replicateM_ 299 getFrame
-     frame2 <- getFrame
-     case frame2 of
-       Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
-                           savePngImage "frame2.png" (ImageRGB8 avf)
-       Nothing -> putStrLn "No frame for me :("
-     cleanup
-     putStrLn "All done!"
+  do 
+    initFFmpeg 
+    setLogLevel avLogTrace
+    (getFrame, cleanup, maybeMetadata) <- imageReaderTime (File vidFile)
+    frame1 <- getFrame
+    case frame1 of
+      Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
+                          savePngImage "frame1.png" (ImageRGB8 avf)
+      Nothing -> putStrLn "No frame for me :("
+    replicateM_ 299 getFrame
+    frame2 <- getFrame
+    case frame2 of
+      Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
+                          savePngImage "frame2.png" (ImageRGB8 avf)
+      Nothing -> putStrLn "No frame for me :("
+    cleanup
+    putStrLn "All done!"
 
 -- | @loopFor timeSpan action@ repeats @action@ until at least @timeSpan@
 -- seconds have elapsed.
@@ -71,7 +73,7 @@ testCamera =
   do initFFmpeg -- Defaults to quiet (minimal) logging
      -- setLogLevel avLogInfo -- Restore standard ffmpeg logging
 
-     (getFrame, cleanup) <- imageReader $
+     (getFrame, cleanup, maybeMetadata) <- imageReader $
        case Info.os of
          "linux" ->
            let cfg = CameraConfig (Just 30) Nothing (Just "mjpeg")
