@@ -74,6 +74,7 @@ library
                        Codec.FFmpeg.Juicy,
                        Codec.FFmpeg.Probe,
                        Codec.FFmpeg.Resampler,
+                       Codec.FFmpeg.Display,
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,

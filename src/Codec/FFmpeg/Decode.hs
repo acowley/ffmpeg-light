@@ -12,17 +12,17 @@ import           Codec.FFmpeg.Common
 import           Codec.FFmpeg.Enums
 import           Codec.FFmpeg.Scaler
 import           Codec.FFmpeg.Types
+import           Codec.FFmpeg.Display
 import           Control.Monad.Except
 import           Control.Monad.IO.Class    (MonadIO(liftIO))
 import           Control.Monad.Trans.Maybe
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.Marshal.Alloc     (alloca, free, mallocBytes)
-import           Foreign.Marshal.Array     (advancePtr)
+import           Foreign.Marshal.Array     (advancePtr, peekArray)
 import           Foreign.Marshal.Utils     (with)
 import           Foreign.Ptr
 import           Foreign.Storable
-import Codec.FFmpeg.Enums (c_AVERROR_EAGAIN)
 
 -- * FFI Declarations
 
@@ -208,38 +208,47 @@ readFrameCheck ctx pkt = do
   r <- av_read_frame ctx pkt
   when (r < 0) (fail "Frame read failed")
 
+data VideoStreamMetadata = VideoStreamMetadata
+  { metadata :: Maybe AVDictionary
+  , displayRotation :: Maybe DisplayRotationDegrees
+  }
+
+extractVideoStreamMetadata :: MonadIO m => AVStream -> m VideoStreamMetadata
+extractVideoStreamMetadata vidStream = do
+  sd <- getStreamSideData vidStream
+  VideoStreamMetadata <$> structMetadata vidStream <*> extractDisplayRotation sd
+
 -- | Read frames of the given 'AVPixelFormat' from a video stream.
 -- | Also read side data or metadata of stream and return this if present
 frameReader :: (MonadIO m, MonadError String m)
-            => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO (), Maybe AVDictionary)
+            => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO (), VideoStreamMetadata )
 frameReader dstFmt ipt = do 
   inputContext <- openInput ipt
   checkStreams inputContext
   (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
   _ <- openCodec ctx cod
-  metadata <- structMetadata vidStream
+  metaAndSide <- extractVideoStreamMetadata vidStream
   (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
-  pure (reader, cleanup, metadata)
+  pure (reader, cleanup, metaAndSide)
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 --
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderT :: (Functor m, MonadIO m, MonadError String m)
-             => InputSource -> m (MaybeT IO AVFrame, IO (), Maybe AVDictionary)
+             => InputSource -> m (MaybeT IO AVFrame, IO (), VideoStreamMetadata)
 frameReaderT = fmap (first3 MaybeT) . frameReader avPixFmtRgb24
   
-
 -- | Read time stamped frames of the given 'AVPixelFormat' from a
 -- video stream. Time is given in seconds from the start of the
 -- stream.
 frameReaderTime :: (MonadIO m, MonadError String m)
                 => AVPixelFormat -> InputSource
-                -> m (IO (Maybe (AVFrame, Double)), IO (), Maybe AVDictionary)
+                -> m (IO (Maybe (AVFrame, Double)), IO (), VideoStreamMetadata)
 frameReaderTime dstFmt src =
   do inputContext <- openInput src
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
-     metadata <- structMetadata vidStream
+     metaAndSide <- extractVideoStreamMetadata vidStream
      _ <- openCodec ctx cod
      (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
      AVRational num den <- liftIO $ getTimeBase vidStream
@@ -252,7 +261,7 @@ frameReaderTime dstFmt src =
                        Nothing -> return Nothing
                        Just f -> do t <- frameTime' f
                                     return $ Just (f, t)
-     return (readTS, cleanup, metadata)
+     return (readTS, cleanup, metaAndSide)
 
 frameAudioReader :: (MonadIO m, MonadError String m)
                  => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO (), Maybe AVDictionary)
@@ -267,7 +276,7 @@ frameAudioReader fileName = do
     samplerate <- getSampleRate ctx
     channelLayout <- getChannelLayout ctx
     sampleFormat <- getSampleFormat ctx
-    channels <- getChannels channelLayout
+    let channels = numChannels channelLayout
     codecId <- getCodecID cod
     return $ AudioStream
         { asBitRate = bitrate
@@ -285,7 +294,7 @@ frameAudioReader fileName = do
 --
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
-                 => InputSource -> m (MaybeT IO (AVFrame, Double), IO (), Maybe AVDictionary)
+                 => InputSource -> m (MaybeT IO (AVFrame, Double), IO (), VideoStreamMetadata)
 frameReaderTimeT = fmap (first3 MaybeT) . frameReaderTime avPixFmtRgb24
 
 prepareAudioReader :: (MonadIO m, MonadError String m)
@@ -376,3 +385,21 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
              else free_packet pkt >> getFrame
            else free_packet pkt >> getFrame
      return (getFrame `catchError` const (return Nothing), cleanup)
+
+getStreamSideData :: MonadIO m => AVStream -> m [AVPacketSideData]
+getStreamSideData avstream = liftIO $ do
+  nbs <- fromIntegral <$> getNbSideData avstream
+  if nbs > 0 then do
+    sdArray <- getSideData avstream
+    peekArray nbs sdArray
+  else  pure []
+
+extractDisplayRotation :: MonadIO m => [AVPacketSideData] -> m (Maybe DisplayRotationDegrees)
+extractDisplayRotation lst = go Nothing lst
+  where 
+    go dsp@(Just _) _ = pure dsp
+    go Nothing (nextElem:xs) = liftIO (getDisplayRotation nextElem)
+    go anything [] = pure anything
+    
+
+

@@ -12,8 +12,9 @@ import Codec.FFmpeg.Internal.Linear
 import Codec.FFmpeg.Resampler
 import Codec.FFmpeg.Scaler
 import Codec.FFmpeg.Types
+import Codec.FFmpeg.Display
 import Codec.Picture
-import Control.Monad (when, void)
+import Control.Monad (when, void, forM_)
 import Data.Bits
 import Data.IORef
 import Data.Maybe (fromMaybe, isNothing)
@@ -125,6 +126,7 @@ data EncodingParams = EncodingParams
   -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
   -- from the output file name. If 'Just', the string value
   -- should be the one available in @ffmpeg -formats@.
+  , epDisplayRotation :: Maybe DisplayRotation
   }
 
 -- | Minimal parameters describing the desired audio/video output.
@@ -158,6 +160,7 @@ data AVEncodingParams = AVEncodingParams
   -- ^ FFmpeg muxer format name. If 'Nothing', tries to infer
   -- from the output file name. If 'Just', the string value
   -- should be the one available in @ffmpeg -formats@.
+  , avepDisplayRotation :: Maybe DisplayRotation
   }
 
 -- | Minimal parameters describing the desired audio/video output.
@@ -189,6 +192,7 @@ data VideoParams = VideoParams
   , vpCodec  :: Maybe AVCodecID
   , vpPixelFormat :: Maybe AVPixelFormat
   , vpPreset :: String
+  , vpDisplayRotation :: Maybe DisplayRotation
   }
 
 class HasVideoParams a where
@@ -202,6 +206,7 @@ instance HasVideoParams EncodingParams where
     , vpCodec  = epCodec ep
     , vpPixelFormat = epPixelFormat ep
     , vpPreset = epPreset ep
+    , vpDisplayRotation = epDisplayRotation ep
     }
 
 instance HasVideoParams AVEncodingParams where
@@ -212,6 +217,7 @@ instance HasVideoParams AVEncodingParams where
     , vpCodec  = avepCodec ep
     , vpPixelFormat = avepPixelFormat ep
     , vpPreset = avepPreset ep
+    , vpDisplayRotation = avepDisplayRotation ep
     }
 
 class HasAudioParams a where
@@ -243,6 +249,7 @@ defaultH264 w h =
     , epPixelFormat = Nothing
     , epPreset = "medium"
     , epFormatName = Nothing
+    , epDisplayRotation = Nothing
     }
 
 -- | Use default parameters for a video of the given width and
@@ -257,6 +264,7 @@ defaultParams w h =
     , epPixelFormat = Nothing
     , epPreset = ""
     , epFormatName = Nothing
+    , epDisplayRotation = Nothing
     }
 
 -- | Determine if the bitwise intersection of two values is non-zero.
@@ -298,7 +306,7 @@ initVideoStream vp oc = do
                            | codec == avCodecIdRawvideo -> avPixFmtRgb24
                            | codec == avCodecIdGif -> avPixFmtPal8
                            | otherwise -> avPixFmtYuv420p
-
+  forM_ (vpDisplayRotation vp) $ \dispRot -> addAsSideData st dispRot
   -- Some formats want stream headers to be separate
   needsHeader <- checkFlag avfmtGlobalheader <$>
                  (getOutputFormat oc >>= getFormatFlags)
@@ -510,7 +518,7 @@ videoWriter ep fname = do
 
 data StreamParams =
     JustVideo VideoParams
-  | JustAudio AudioParams
+  | JustAudio AudioParams  
   | AudioVideo AudioParams VideoParams
 
 withVideoParams :: StreamParams -> a -> (VideoParams -> a) -> a
@@ -805,3 +813,5 @@ frameWriterRgb ep f = do
   let aux pixels = (avPixFmtRgb24, V2 (epWidth ep) (epHeight ep), pixels)
   videoWriter <- frameWriter ep f
   return $ \pix -> videoWriter (aux <$> pix)
+
+

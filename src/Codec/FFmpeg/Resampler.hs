@@ -51,7 +51,7 @@ makeResampler ctx inParams outParams = do
                 srcData = castPtr (hasData frame)
             dstDataPtr <- malloc
             lineSize <- malloc
-            dstChannelCount <- getChannels (apChannelLayout outParams)
+            let dstChannelCount = numChannels (apChannelLayout outParams)
             _ <- runWithError "Could not alloc samples"
                      (av_samples_alloc_array_and_samples dstDataPtr lineSize
                      dstChannelCount (fromIntegral dstSamples)
@@ -114,12 +114,11 @@ initSwrContext inParams outParams = do
         _ <- av_opt_set_int (getPtr swr) cStr (fromIntegral i) 0
         free cStr
       set_sample_fmt str fmt = withCString str $ \cStr -> av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
-      set_channel_layout str avchl = withCString str $ \cStr -> av_opt_set_chlayout (getPtr swr) cStr avchl 0
 
-  void $ set_channel_layout "in_ch_layout" (apChannelLayout inParams)
+  void $ set_channel_layout swr "in_ch_layout" (apChannelLayout inParams)
   set_int "in_sample_rate" (apSampleRate inParams)
   void $ set_sample_fmt "in_sample_fmt" (apSampleFormat inParams)
-  void $ set_channel_layout "out_ch_layout" (apChannelLayout outParams)
+  void $ set_channel_layout swr "out_ch_layout" (apChannelLayout outParams)
   set_int "out_sample_rate" (apSampleRate outParams)
   void $ set_sample_fmt "out_sample_fmt" (apSampleFormat outParams)
 

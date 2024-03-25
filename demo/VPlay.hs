@@ -83,7 +83,7 @@ readTSDiff readerTS = do
   return reader
 
 -- Transformer version of updateTextureByFrame.
-updateTextureByFrameT :: SDL.Texture -> AVFrame -> MaybeT IO SDL.Texture
+updateTextureByFrameT :: SDL.Texture -> AVFrame -> MaybeT IO ()
 updateTextureByFrameT texture frame =
   copyImageDataT frame >>= updateTexture texture
   where
@@ -92,7 +92,7 @@ updateTextureByFrameT texture frame =
         SDL.updateTexture t Nothing img
 
 -- Update texture by image data from frame.
-updateTextureByFrame :: SDL.Texture -> AVFrame -> IO (Maybe SDL.Texture)
+updateTextureByFrame :: SDL.Texture -> AVFrame -> IO (Maybe ())
 updateTextureByFrame t = runMaybeT . updateTextureByFrameT t
 
 -- Return Nothing when condition holds.
@@ -300,7 +300,7 @@ videoPlayer cfg src = do
       let reader' = runMaybeT $ do
                           (f, t) <- MaybeT tsDiffReader
                           updateTextureByFrameT texture f
-                            >>= return . flip (,) t
+                          return (texture, t)
 
           -- Texture renderer.
           render t = do

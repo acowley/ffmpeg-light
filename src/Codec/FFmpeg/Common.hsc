@@ -10,7 +10,7 @@ import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Maybe
 import           Foreign.C.String
 import           Foreign.C.Types
-import           Foreign.Marshal.Alloc     (allocaBytes, free)
+import           Foreign.Marshal.Alloc     (allocaBytes, free, alloca)
 import           Foreign.Marshal.Array     (advancePtr, mallocArray)
 import           Foreign.Ptr
 import           Foreign.Storable
@@ -83,7 +83,7 @@ foreign import ccall "av_opt_get_chlayout"
   av_opt_get_chlayout :: Ptr () -> CString -> CInt -> Ptr AVChannelLayout -> IO CInt
 
 foreign import ccall "av_opt_set_chlayout"
-  av_opt_set_chlayout :: Ptr () -> CString -> AVChannelLayout -> CInt -> IO CInt
+  av_opt_set_chlayout :: Ptr () -> CString -> Ptr AVChannelLayout -> CInt -> IO CInt
 
 foreign import ccall "avcodec_send_frame"
   avcodec_send_frame :: AVCodecContext -> AVFrame -> IO CInt
@@ -329,15 +329,15 @@ listSupportedSampleFormats codec = do
                         return $ getSampleFormatInt v == -1
                 )
 
-listSupportedChannelLayouts :: AVCodec -> IO [CULong]
+listSupportedChannelLayouts :: AVCodec -> IO [AVChannelLayout]
 listSupportedChannelLayouts codec = do
   chanPtr <- getChannelLayouts codec
   walkPtrs chanPtr (\ptr ->
                     if ptr == nullPtr
                       then return True
                       else do
-                        v <- peek ptr
-                        return $ v == 0
+                        co <- peek ptr
+                        return $ (numChannels  co) == 0
                    )
 
 listSupportedSampleRates :: AVCodec -> IO [CInt]
@@ -353,3 +353,8 @@ listSupportedSampleRates codec = do
 
 first3 :: (t -> a) -> (t, b, c) -> (a, b, c)
 first3 f (a,b,c) = (f a,b,c)
+
+set_channel_layout target str avchl = 
+  alloca $ \chlayoutPtr -> do
+    poke chlayoutPtr avchl 
+    withCString str $ \cStr -> av_opt_set_chlayout (getPtr target) cStr chlayoutPtr 0

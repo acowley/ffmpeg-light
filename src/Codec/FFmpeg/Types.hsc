@@ -79,14 +79,6 @@ foreign import ccall "avformat_alloc_context"
 mallocAVFormatContext :: IO AVFormatContext
 mallocAVFormatContext = AVFormatContext <$> avformat_alloc_context
 
-newtype AVChannelLayout = AVChannelLayout (Ptr ()) deriving (Storable, HasPtr)
-
-#mkField ChannelOrder, AVChannelOrder
-#mkField Channels, CInt
-
-#hasField AVChannelLayout, ChannelOrder, order
-#hasField AVChannelLayout, Channels, nb_channels
-
 newtype AVCodecContext = AVCodecContext (Ptr ()) deriving (Storable, HasPtr)
 
 foreign import ccall "avcodec_alloc_context3"
@@ -124,7 +116,7 @@ foreign import ccall "avcodec_alloc_context3"
 #hasField AVCodecContext, TicksPerFrame, ticks_per_frame
 #hasField AVCodecContext, RawAspectRatio, sample_aspect_ratio
 #hasField AVCodecContext, SampleRate, sample_rate
-#hasField AVCodecContext, ChannelLayout, channel_layout
+#hasField AVCodecContext, ChannelLayout, ch_layout
 #hasField AVCodecContext, SampleFormat, sample_fmt
 #hasField AVCodecContext, FrameSize, frame_size
 #hasField AVCodecContext, FrameRate, framerate
@@ -158,12 +150,24 @@ foreign import ccall "avcodec_parameters_to_context"
                                   -> AVCodecParameters
                                   -> IO CInt
 
+newtype AVPacketSideData = AVPacketSideData (Ptr ()) deriving (Storable, HasPtr)
+
+#mkField PacketSideDataData, (Ptr ())
+#mkField PacketSideDataSize, CLong
+#mkField PacketSideDataType, AVPacketSideDataType
+
+#hasField AVPacketSideData, PacketSideDataData, data
+#hasField AVPacketSideData, PacketSideDataSize, size
+#hasField AVPacketSideData, PacketSideDataType, type
+
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #mkField Id, CInt
 #mkField CodecContext, AVCodecContext
 #mkField StreamIndex, CInt
 #mkField CodecParams, AVCodecParameters
 #mkField Dictionary, AVDictionary
+#mkField SideData, (Ptr (AVPacketSideData))
+#mkField NbSideData, CInt
 
 -- Update this to include side data & metadata in the structure
 
@@ -172,13 +176,15 @@ newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVStream, StreamIndex, index
 #hasField AVStream, CodecParams, codecpar
 #hasField AVStream, Dictionary, metadata
+#hasField AVStream, SideData, side_data
+#hasField AVStream, NbSideData, nb_side_data
 
 newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString
 #mkField Name, CString
 #mkField PixelFormats, (Ptr AVPixelFormat)
 #mkField SampleFormats, (Ptr AVSampleFormat)
-#mkField ChannelLayouts, (Ptr CULong)
+#mkField ChannelLayouts, (Ptr AVChannelLayout)
 #mkField SupportedSampleRates, (Ptr CInt)
 #mkField Capabilities, CInt
 
@@ -187,7 +193,7 @@ newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodec, CodecID, id
 #hasField AVCodec, PixelFormats, pix_fmts
 #hasField AVCodec, SampleFormats, sample_fmts
-#hasField AVCodec, ChannelLayouts, channel_layouts
+#hasField AVCodec, ChannelLayouts, ch_layouts
 #hasField AVCodec, SupportedSampleRates, supported_samplerates
 #hasField AVCodec, Capabilities, capabilities
 
@@ -402,3 +408,111 @@ data CameraConfig =
 
 defaultCameraConfig :: CameraConfig
 defaultCameraConfig = CameraConfig (Just 30) Nothing Nothing
+
+newtype AVChannelCustom = AVChannelCustom (Ptr ()) deriving (Storable, HasPtr)
+
+data AVChannelLayout = 
+  AVChannelLayout { order :: AVChannelOrder
+                  , numChannels :: CInt
+                  , mask :: Either CUInt AVChannelCustom                    
+                  } -- Ignore the union for now
+
+instance Storable AVChannelLayout where
+  sizeOf _ = #size AVChannelLayout
+  alignment _ = #size AVChannelLayout
+  peek ptr = do
+    ord <- (#peek AVChannelLayout, order) ptr
+    nc <- (#peek AVChannelLayout, nb_channels) ptr
+    maskCust <- if ord == avChannelOrderCustom then do
+        custPtr <- (#peek AVChannelLayout, u) ptr
+        Right <$> (AVChannelCustom <$> peek custPtr) 
+      else
+        Left <$> (fromIntegral <$> peekULong)
+    pure (AVChannelLayout ord nc maskCust)
+    where
+      peekULong :: IO CUInt
+      peekULong = (#peek AVChannelLayout, u) ptr
+ 
+  poke ptr (AVChannelLayout ord nc maskCustom) = do 
+    (#poke AVChannelLayout, order) ptr ord
+    (#poke AVChannelLayout, nb_channels) ptr nc
+    case maskCustom of
+      Left msk -> (#poke AVChannelLayout, u) ptr msk
+      Right custom -> (#poke AVChannelLayout, u) ptr custom
+                               
+
+foreign import ccall "av_channel_layout_default"
+  av_channel_layout_default :: Ptr () -> CInt -> IO ()
+
+channelLayoutDefault :: Ptr () -> CInt -> IO AVChannelLayout
+channelLayoutDefault ptr chans = do
+  av_channel_layout_default ptr chans
+  peek (castPtr ptr)
+
+sizeOfAVChannelLayout :: Int
+sizeOfAVChannelLayout = #size AVChannelLayout
+
+
+cAV_CHANNEL_LAYOUT_MASK :: CInt -> CUInt -> AVChannelLayout
+cAV_CHANNEL_LAYOUT_MASK nb  m = AVChannelLayout avChannelOrderNative nb (Left m)
+
+cAV_CHANNEL_LAYOUT_MONO               :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_STEREO             :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2_1                :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_SURROUND           :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_3POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_4POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_4POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2_2                :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_QUAD               :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT0_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT1_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT0_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_HEXAGONAL          :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT0_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK  :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_OCTAGONAL          :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_HEXADECAGONAL      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_STEREO_DOWNMIX     :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_22POINT2           :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_AMBISONIC_FIRST_ORDER :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_MONO              = cAV_CHANNEL_LAYOUT_MASK 1  cAV_CH_LAYOUT_MONO
+cAV_CHANNEL_LAYOUT_STEREO            = cAV_CHANNEL_LAYOUT_MASK 2  cAV_CH_LAYOUT_STEREO
+cAV_CHANNEL_LAYOUT_2POINT1           = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_2POINT1
+cAV_CHANNEL_LAYOUT_2_1               = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_2_1
+cAV_CHANNEL_LAYOUT_SURROUND          = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_SURROUND
+cAV_CHANNEL_LAYOUT_3POINT1           = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_3POINT1
+cAV_CHANNEL_LAYOUT_4POINT0           = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_4POINT0
+cAV_CHANNEL_LAYOUT_4POINT1           = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_4POINT1
+cAV_CHANNEL_LAYOUT_2_2               = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_2_2
+cAV_CHANNEL_LAYOUT_QUAD              = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_QUAD
+cAV_CHANNEL_LAYOUT_5POINT0           = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_5POINT0
+cAV_CHANNEL_LAYOUT_5POINT1           = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_5POINT1
+cAV_CHANNEL_LAYOUT_5POINT0_BACK      = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_5POINT0_BACK
+cAV_CHANNEL_LAYOUT_5POINT1_BACK      = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_5POINT1_BACK
+cAV_CHANNEL_LAYOUT_6POINT0           = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_6POINT0
+cAV_CHANNEL_LAYOUT_6POINT0_FRONT     = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_6POINT0_FRONT
+cAV_CHANNEL_LAYOUT_HEXAGONAL         = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_HEXAGONAL
+cAV_CHANNEL_LAYOUT_6POINT1           = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1
+cAV_CHANNEL_LAYOUT_6POINT1_BACK      = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1_BACK
+cAV_CHANNEL_LAYOUT_6POINT1_FRONT     = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1_FRONT
+cAV_CHANNEL_LAYOUT_7POINT0           = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_7POINT0
+cAV_CHANNEL_LAYOUT_7POINT0_FRONT     = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_7POINT0_FRONT
+cAV_CHANNEL_LAYOUT_7POINT1           = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE      = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1_WIDE
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1_WIDE_BACK
+cAV_CHANNEL_LAYOUT_OCTAGONAL         = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_OCTAGONAL
+cAV_CHANNEL_LAYOUT_HEXADECAGONAL     = cAV_CHANNEL_LAYOUT_MASK 16 cAV_CH_LAYOUT_HEXADECAGONAL
+cAV_CHANNEL_LAYOUT_STEREO_DOWNMIX    = cAV_CHANNEL_LAYOUT_MASK 2  cAV_CH_LAYOUT_STEREO_DOWNMIX
+cAV_CHANNEL_LAYOUT_22POINT2          = cAV_CHANNEL_LAYOUT_MASK 24 cAV_CH_LAYOUT_22POINT2
+cAV_CHANNEL_LAYOUT_AMBISONIC_FIRST_ORDER = AVChannelLayout avChannelOrderAmbisonic 4 (Left 0)

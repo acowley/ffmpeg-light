@@ -13,6 +13,7 @@ import           Control.Monad.Except
 import           Data.IORef
 import           Foreign.C.Types
 import           Foreign.Marshal.Array
+import           Foreign.Marshal.Alloc
 import           Foreign.Ptr
 import           Foreign.Storable
 import           System.Environment
@@ -79,66 +80,67 @@ mkImage w h color =
 main :: IO ()
 main = do
   initFFmpeg
+  setLogLevel avLogTrace
 
-  let w = 1080
-      h = 720
-      encParams = AVEncodingParams
-                    { avepWidth = w
-                    , avepHeight = h
-                    , avepFps = 30
-                    , avepCodec = Nothing
-                    , avepPixelFormat = Nothing
-                    , avepChannelLayout = avChLayoutMono
-                    , avepSampleRate = 44100
-                    , avepSampleFormat = avSampleFmtFltp
-                    , avepPreset = ""
-                    , avepFormatName = Nothing
-                    }
-  writerContext <- audioVideoWriter encParams "sinusoidal.mp4"
-  let mCtx = avwAudioCodecContext writerContext
-      videoWriter = avwVideoWriter writerContext
-      audioWriter = avwAudioWriter writerContext
-  case mCtx of
-    Nothing -> error "Could not get audio ctx"
-    Just ctx -> do
-      frame <- frame_alloc_check
-      setNumSamples frame =<< getFrameSize ctx
-      setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
-      setChannelLayout frame =<< getChannelLayout ctx
-      setSampleRate frame =<< getSampleRate ctx
+  allocaBytes sizeOfAVChannelLayout $ \chanLayout -> do
+    let w = 1080
+        h = 720
+        encParams = AVEncodingParams
+                      { avepWidth = w
+                      , avepHeight = h
+                      , avepFps = 30
+                      , avepCodec = Nothing
+                      , avepPixelFormat = Nothing
+                      , avepChannelLayout = cAV_CHANNEL_LAYOUT_MONO
+                      , avepSampleRate = 44100
+                      , avepSampleFormat = avSampleFmtFltp
+                      , avepPreset = ""
+                      , avepFormatName = Nothing
+                      , avepDisplayRotation = Nothing
+                      }
+    writerContext <- audioVideoWriter encParams "sinusoidal.mp4"
+    let mCtx = avwAudioCodecContext writerContext
+        videoWriter = avwVideoWriter writerContext
+        audioWriter = avwAudioWriter writerContext
+    case mCtx of
+      Nothing -> error "Could not get audio ctx"
+      Just ctx -> do
+        frame <- frame_alloc_check
+        setNumSamples frame =<< getFrameSize ctx
+        setFormat frame . getSampleFormatInt =<< getSampleFormat ctx
+        setChannelLayout frame =<< getChannelLayout ctx
+        setSampleRate frame =<< getSampleRate ctx
 
-      ch <- getChannelLayout ctx
-      numChannels <- getChannels ctx
+        ch <- getChannelLayout ctx
+        putStrLn $ "channel layout order: " ++ show (order ch)
+        putStrLn $ "channel layout channels: " ++ show (numChannels ch)
+        
+        runWithError "Alloc buffers" (av_frame_get_buffer frame 0)
 
-      print ("Channel Layout", ch)
-      print ("Channels", numChannels)
+        let sampleRate = avepSampleRate encParams
+        print ("sample rate", sampleRate)
 
-      runWithError "Alloc buffers" (av_frame_get_buffer frame 0)
+        vidFrameRef <- newIORef 0 :: IO (IORef Int)
+        forM_ [0..120] $ \i -> do
+          av_frame_make_writable frame
+          dataPtr <- castPtr <$> getData frame :: IO (Ptr CFloat)
+          nbSamples <- getNumSamples frame
+          forM_ [0..nbSamples-1] $ \j -> do
+            let idx = fromIntegral i * fromIntegral nbSamples + fromIntegral j :: Integer
+                t = fromIntegral idx / fromIntegral sampleRate
+                v = twoFiveOne t
+            poke (advancePtr dataPtr (fromIntegral j)) (realToFrac v)
+            vidFrame <- readIORef vidFrameRef
+            when (t * 30 >= fromIntegral vidFrame) $ do
+              -- TODO: I'm not sure why t seems to be half the actual value but I need to do
+              -- 0.5 and 1 to make the chord changes match up with the color changes
+              modifyIORef vidFrameRef (+1)
+              let color = if | t <= 1    -> PixelRGB8 255 0 0
+                             | t <= 2    -> PixelRGB8 0 255 0
+                             | otherwise -> PixelRGB8 0 0 255
+                  img = mkImage (fromIntegral w) (fromIntegral h) color
+              videoWriter (Just (fromJuciy img))
+          audioWriter (Just frame)
 
-      let sampleRate = avepSampleRate encParams
-      print ("sample rate", sampleRate)
-
-      vidFrameRef <- newIORef 0 :: IO (IORef Int)
-      forM_ [0..120] $ \i -> do
-        av_frame_make_writable frame
-        dataPtr <- castPtr <$> getData frame :: IO (Ptr CFloat)
-        nbSamples <- getNumSamples frame
-        forM_ [0..nbSamples-1] $ \j -> do
-          let idx = fromIntegral i * fromIntegral nbSamples + fromIntegral j :: Integer
-              t = fromIntegral idx / fromIntegral sampleRate
-              v = twoFiveOne t
-          poke (advancePtr dataPtr (fromIntegral j)) (realToFrac v)
-          vidFrame <- readIORef vidFrameRef
-          when (t * 30 >= fromIntegral vidFrame) $ do
-            -- TODO: I'm not sure why t seems to be half the actual value but I need to do
-            -- 0.5 and 1 to make the chord changes match up with the color changes
-            modifyIORef vidFrameRef (+1)
-            let color = if | t <= 1    -> PixelRGB8 255 0 0
-                           | t <= 2    -> PixelRGB8 0 255 0
-                           | otherwise -> PixelRGB8 0 0 255
-                img = mkImage (fromIntegral w) (fromIntegral h) color
-            videoWriter (Just (fromJuciy img))
-        audioWriter (Just frame)
-
-      videoWriter Nothing
-      audioWriter Nothing
+        videoWriter Nothing
+        audioWriter Nothing
