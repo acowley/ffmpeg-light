@@ -10,7 +10,6 @@ import Codec.FFmpeg.Decode
 import Codec.FFmpeg.Encode
 import Codec.FFmpeg.Enums
 import Codec.FFmpeg.Internal.Linear (V2 (..))
-import Codec.FFmpeg.Probe
 import Codec.FFmpeg.Types
 import Codec.Picture
 import Control.Monad.Except
@@ -18,11 +17,13 @@ import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Maybe
 import Data.Foldable (traverse_)
-import Data.List.NonEmpty (NonEmpty, singleton, (<|))
+import Data.List.NonEmpty (NonEmpty)
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as VM
 import Foreign.C.Types
 import Foreign.Storable (sizeOf)
+import Codec.FFmpeg.Display (DisplayRotationDegrees)
+import Codec.Picture.Extra (rotate180, rotateRight90, rotateLeft90)
 
 -- | Convert 'AVFrame' to a 'Vector'.
 frameToVector :: AVFrame -> IO (Maybe (V.Vector CUChar))
@@ -73,16 +74,25 @@ toJuicy frame = runMaybeT $ do
         | otherwise -> Nothing
 
 -- | Convert an 'AVFrame' to an 'Image'.
-toJuicyImage :: forall p. (JuicyPixelFormat p) => AVFrame -> IO (Maybe (Image p))
-toJuicyImage frame = runMaybeT $ do
+-- | Rotate it if display rotation is available as side data
+toJuicyImage :: forall p. (JuicyPixelFormat p) => Bool -> Maybe DisplayRotationDegrees -> AVFrame -> IO (Maybe (Image p))
+toJuicyImage rotateIfPres mdisp frame = runMaybeT $ do
   fmt <- lift $ getPixelFormat frame
   guard (fmt == juicyPixelFormat ([] :: [p]))
+  w <- lift $ fromIntegral <$> getWidth frame
+  h <- lift $ fromIntegral <$> getHeight frame
 
-  MaybeT $ do
-    w <- fromIntegral <$> getWidth frame
-    h <- fromIntegral <$> getHeight frame
+  img <- MaybeT $ fmap (Image w h . V.unsafeCast) <$> frameToVector frame
+  maybe (pure img) (pure . rotate img) (if rotateIfPres then mdisp else Nothing)
 
-    fmap (Image w h . V.unsafeCast) <$> frameToVector frame
+rotate :: forall p. (JuicyPixelFormat p) =>  Image p  -> DisplayRotationDegrees -> Image p
+rotate img rotation
+  | abs rotation >= 180 = rotate180 img
+  | rotation == (-90) = rotateRight90 img
+  | rotation == 90 = rotateLeft90 img
+  -- TODO handle this exception case
+  | otherwise = img 
+
 
 -- | Save an 'AVFrame' to a PNG file on disk assuming the frame could
 -- be converted to a 'DynamicImage' using 'toJuicy'.
@@ -109,16 +119,6 @@ juicyPixelStride _ =
 
 type Metadata = NonEmpty (String, String)
 
-avDictionaryToKV :: (MonadIO m, JuicyPixelFormat p) => m (a1, b, Maybe AVDictionary) -> ((AVFrame -> IO (Maybe (Image p))) -> a1 -> MaybeT m2 a2) -> m (m2 (Maybe a2), b, Maybe Metadata)
-avDictionaryToKV f aux = do
-  (frame, cleanup, avdict) <- f
-  let frameResult = runMaybeT (aux toJuicyImage frame)
-  md <- dictFoldM folder Nothing `mapM` avdict
-  pure (frameResult, cleanup, join md)
-  where
-    folder Nothing kv = pure (Just (singleton kv))
-    folder (Just nes) kv = pure (Just (kv <| nes))
-
 -- | Read frames from a video stream.
 imageReaderT ::
   forall m p.
@@ -127,21 +127,27 @@ imageReaderT ::
     MonadError String m,
     JuicyPixelFormat p
   ) =>
+  Bool -> 
   InputSource ->
   m (IO (Maybe (Image p)), IO (), VideoStreamMetadata)
-imageReaderT =
-  fmap (first3 (runMaybeT . aux toJuicyImage))
-    . frameReader (juicyPixelFormat ([] :: [p]))
+imageReaderT mdisp is = do
+  (r, c, md) <- frameReader (juicyPixelFormat ([] :: [p])) is
+  pure (aux md r, c, md)
+  -- fmap (first3 (runMaybeT . aux (toJuicyImage mdisp)))
+  --   . frameReader (juicyPixelFormat ([] :: [p]))
   where
-    aux g x = MaybeT x >>= MaybeT . g
+    aux md r = runMaybeT $ do
+      frame <- MaybeT r
+      MaybeT $ toJuicyImage mdisp (displayRotation md) frame
 
 -- | Read frames from a video stream. Errors are thrown as
 -- 'IOException's.
 imageReader ::
   (JuicyPixelFormat p) =>
+  Bool ->
   InputSource ->
   IO (IO (Maybe (Image p)), IO (), VideoStreamMetadata)
-imageReader = either error return <=< (runExceptT . imageReaderT)
+imageReader mdisp = either error return <=< (runExceptT . imageReaderT mdisp)
 
 -- | Read time stamped frames from a video stream. Time is given in
 -- seconds from the start of the stream.
@@ -152,25 +158,27 @@ imageReaderTimeT ::
     MonadError String m,
     JuicyPixelFormat p
   ) =>
+  Bool ->
   InputSource ->
   m (IO (Maybe (Image p, Double)), IO (), VideoStreamMetadata)
-imageReaderTimeT =
-  fmap (first3 (runMaybeT . aux toJuicyImage))
-    . frameReaderTime (juicyPixelFormat ([] :: [p]))
+imageReaderTimeT mdisp is = do
+  (r, c, md) <- frameReaderTime (juicyPixelFormat ([] :: [p])) is
+  pure (aux md r, c, md)
   where
-    aux g x = do
-      (f, t) <- MaybeT x
-      f' <- MaybeT $ g f
-      return (f', t)
+    aux md r = runMaybeT $ do
+      (frame, ts) <- MaybeT r
+      frame' <- MaybeT $ toJuicyImage mdisp (displayRotation md) frame
+      return (frame', ts)
 
 -- | Read time stamped frames from a video stream. Time is given in
 -- seconds from the start of the stream. Errors are thrown as
 -- 'IOException's.
 imageReaderTime ::
   (JuicyPixelFormat p) =>
+  Bool ->
   InputSource ->
   IO (IO (Maybe (Image p, Double)), IO (), VideoStreamMetadata)
-imageReaderTime = either error return <=< runExceptT . imageReaderTimeT
+imageReaderTime mdisp = either error return <=< runExceptT . imageReaderTimeT mdisp
 
 -- | Open a target file for writing a video stream. When the returned
 -- function is applied to 'Nothing', the output stream is closed. Note

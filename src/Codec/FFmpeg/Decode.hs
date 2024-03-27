@@ -270,7 +270,7 @@ frameAudioReader fileName = do
   checkStreams inputContext
   (audioStreamIndex, ctx, cod, audioStream) <- findAudioStream inputContext
   metadata <- structMetadata audioStream
-  openCodec ctx cod
+  void (openCodec ctx cod)
   as <- liftIO $ do
     bitrate <- getBitRate ctx
     samplerate <- getSampleRate ctx
@@ -398,7 +398,11 @@ extractDisplayRotation :: MonadIO m => [AVPacketSideData] -> m (Maybe DisplayRot
 extractDisplayRotation lst = go Nothing lst
   where 
     go dsp@(Just _) _ = pure dsp
-    go Nothing (nextElem:xs) = liftIO (getDisplayRotation nextElem)
+    go Nothing (nextElem:xs) = do 
+      disprm <- liftIO (getDisplayRotation nextElem)
+      case disprm of 
+        Nothing -> go Nothing xs
+        Just dispr -> pure (Just dispr)
     go anything [] = pure anything
     
 

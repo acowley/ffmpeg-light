@@ -150,23 +150,32 @@ foreign import ccall "avcodec_parameters_to_context"
                                   -> AVCodecParameters
                                   -> IO CInt
 
-newtype AVPacketSideData = AVPacketSideData (Ptr ()) deriving (Storable, HasPtr)
+data AVPacketSideData = AVPacketSideData {
+  data_ :: Ptr (),
+  size :: CSize,
+  tipe :: AVPacketSideDataType 
+}
 
-#mkField PacketSideDataData, (Ptr ())
-#mkField PacketSideDataSize, CLong
-#mkField PacketSideDataType, AVPacketSideDataType
-
-#hasField AVPacketSideData, PacketSideDataData, data
-#hasField AVPacketSideData, PacketSideDataSize, size
-#hasField AVPacketSideData, PacketSideDataType, type
-
+instance Storable AVPacketSideData where
+  sizeOf _ = #size AVPacketSideData
+  alignment _ = #size AVPacketSideData
+  peek ptr = AVPacketSideData 
+    <$> (#peek AVPacketSideData, data) ptr
+    <*> (#peek AVPacketSideData, size) ptr
+    <*> (#peek AVPacketSideData, type) ptr
+ 
+  poke ptr (AVPacketSideData dta sz t) = do 
+    (#poke AVPacketSideData, data) ptr dta
+    (#poke AVPacketSideData, size) ptr sz
+    (#poke AVPacketSideData, type) ptr t
+    
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #mkField Id, CInt
 #mkField CodecContext, AVCodecContext
 #mkField StreamIndex, CInt
 #mkField CodecParams, AVCodecParameters
 #mkField Dictionary, AVDictionary
-#mkField SideData, (Ptr (AVPacketSideData))
+#mkField SideData, (Ptr AVPacketSideData)
 #mkField NbSideData, CInt
 
 -- Update this to include side data & metadata in the structure
@@ -415,7 +424,7 @@ data AVChannelLayout =
   AVChannelLayout { order :: AVChannelOrder
                   , numChannels :: CInt
                   , mask :: Either CUInt AVChannelCustom                    
-                  } -- Ignore the union for now
+                  } 
 
 instance Storable AVChannelLayout where
   sizeOf _ = #size AVChannelLayout

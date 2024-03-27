@@ -127,6 +127,8 @@ data EncodingParams = EncodingParams
   -- from the output file name. If 'Just', the string value
   -- should be the one available in @ffmpeg -formats@.
   , epDisplayRotation :: Maybe DisplayRotation
+  -- ^ Display rotation side data to enable frame rotation.
+  -- Will likely be Nothing when video has no rotation
   }
 
 -- | Minimal parameters describing the desired audio/video output.

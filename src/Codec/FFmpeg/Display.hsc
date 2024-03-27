@@ -9,7 +9,7 @@ import Foreign.C.Types
 import Foreign.Marshal.Array (newArray)
 import Data.Int (Int32)
 
-import Codec.FFmpeg.Types (AVPacketSideData (..), getPacketSideDataData, AVStream (..), getPacketSideDataType)
+import Codec.FFmpeg.Types (AVPacketSideData (..), AVStream (..))
 import Codec.FFmpeg.Enums (AVPacketSideDataType (..), avPktDataDisplaymatrix)
 import Codec.FFmpeg.Common (av_malloc)
 
@@ -28,10 +28,10 @@ type DisplayRotationDegrees = Integer
 
 getDisplayRotation :: AVPacketSideData -> IO (Maybe DisplayRotationDegrees)
 getDisplayRotation avp = do
-  case getPacketSideDataType avp of 
-    avPktDataDisplaymatrix -> do 
-      ptr <- getPacketSideDataData avp
-      rot <- av_display_rotation_get ptr
+  case tipe avp of 
+    avPktDataDisplaymatrix -> do
+      rot <- av_display_rotation_get (data_ avp)
+      print rot
       pure $ if isnan rot > 0 then Nothing else Just (round rot)
     _ -> pure Nothing
 

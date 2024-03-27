@@ -11,7 +11,7 @@ import Control.Monad (unless)
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
 firstFrame = do initFFmpeg
-                (getFrame, cleanup, maybeMetadata) <- imageReader (File "myVideo.mov")
+                (getFrame, cleanup, maybeMetadata) <- imageReader False (File "myVideo.mov")
                 (fmap ImageRGB8 <$> getFrame) <* cleanup
 
 -- | Generate a video that pulses from light to dark.
@@ -42,8 +42,8 @@ testDecode :: FilePath -> IO ()
 testDecode vidFile =
   do 
     initFFmpeg 
-    setLogLevel avLogTrace
-    (getFrame, cleanup, maybeMetadata) <- imageReaderTime (File vidFile)
+    -- setLogLevel avLogTrace
+    (getFrame, cleanup, maybeMetadata) <- imageReaderTime True (File vidFile)
     frame1 <- getFrame
     case frame1 of
       Just (avf,ts) -> do putStrLn $ "Frame at "++show ts
@@ -73,7 +73,7 @@ testCamera =
   do initFFmpeg -- Defaults to quiet (minimal) logging
      -- setLogLevel avLogInfo -- Restore standard ffmpeg logging
 
-     (getFrame, cleanup, maybeMetadata) <- imageReader $
+     (getFrame, cleanup, maybeMetadata) <- imageReader False $
        case Info.os of
          "linux" ->
            let cfg = CameraConfig (Just 30) Nothing (Just "mjpeg")
@@ -106,8 +106,9 @@ main = do args <- getArgs
   where usage =
           unlines [ "Usage: demo [videoFile]"
                   , "  If no argument is given, a test video named "
-                  , "  pulse.mov is generated."
+                  , "  pulse.mov is generated with side data of 90 degree rotation."
                   , ""
                   , "  If a file name is given, then two frames are "
                   , "  extracted: the first frame, and the 301st."
-                  , "  These are saved to frame1.png and frame2.png" ]
+                  , "  These are saved to frame1.png and frame2.png."
+                  , "  If the video has rotation then these frame are corrected" ]
