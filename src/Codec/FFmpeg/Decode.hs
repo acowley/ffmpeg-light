@@ -355,17 +355,15 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
                       free (getPtr pkt)
          -- This function follows the steps from https://ffmpeg.org/doxygen/trunk/group__lavc__encdec.html
          getFrame = do
-           readFrameCheck fmtCtx pkt
-           whichStream <- getStreamIndex pkt
-           if whichStream == vidStream
-           then do
-             frameReady  <- avcodec_send_packet codCtx pkt
-             if frameReady == c_AVERROR_EAGAIN then do
-                -- Frame is ready to read
-                avcodec_receive_frame codCtx fRaw -- TODO: non zero is an error here
-                -- Send the packet to the decoder
-                avcodec_send_packet codCtx pkt -- TODO: non zero is an error here 
-            
+            recvdFrame  <- avcodec_receive_frame codCtx fRaw
+            if recvdFrame == c_AVERROR_EAGAIN then do
+              readFrameCheck fmtCtx pkt
+              whichStream <- getStreamIndex pkt
+              if whichStream == vidStream then do
+                avcodec_send_packet codCtx pkt -- TODO: non zero is an error here
+                free_packet pkt
+                getFrame
+             
                -- Some streaming codecs require a final flush with
                -- an empty packet
                -- fin' <- alloca $ \fin2 -> do
@@ -374,16 +372,16 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
                --           (#poke AVPacket, size) pkt (0::CInt)
                --           decode_video codCtx fRaw fin2 pkt
                --           peek fin2
+              else free_packet pkt >> getFrame           
+            else do
+              _ <- swsScale sws fRaw fRgb
 
-                _ <- swsScale sws fRaw fRgb
+              -- Copy the raw frame's timestamp to the RGB frame
+              getPktDts fRaw >>= setPts fRgb
 
-               -- Copy the raw frame's timestamp to the RGB frame
-                getPktDts fRaw >>= setPts fRgb
-
-                free_packet pkt
-                return $ Just fRgb
-             else free_packet pkt >> getFrame
-           else free_packet pkt >> getFrame
+              free_packet pkt
+              return $ Just fRgb
+           
      return (getFrame `catchError` const (return Nothing), cleanup)
 
 getStreamSideData :: MonadIO m => AVStream -> m [AVPacketSideData]
