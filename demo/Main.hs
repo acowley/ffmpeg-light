@@ -11,7 +11,7 @@ import Control.Monad (unless)
 -- The example used in the README
 firstFrame :: IO (Maybe DynamicImage)
 firstFrame = do initFFmpeg
-                (getFrame, cleanup, maybeMetadata) <- imageReader False (File "myVideo.mov")
+                (getFrame, cleanup, _) <- imageReader False (File "myVideo.mov")
                 (fmap ImageRGB8 <$> getFrame) <* cleanup
 
 -- | Generate a video that pulses from light to dark.

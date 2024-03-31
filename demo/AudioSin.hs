@@ -17,6 +17,7 @@ import           Foreign.Marshal.Alloc
 import           Foreign.Ptr
 import           Foreign.Storable
 import           System.Environment
+import           Control.Monad (forM_, when)
 
 -- Simple Music DSL
 type Sound = Float -> Float

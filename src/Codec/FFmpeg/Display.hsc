@@ -6,8 +6,6 @@ module Codec.FFmpeg.Display where
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.C.Types
-import Foreign.Marshal.Array (newArray)
-import Data.Int (Int32)
 
 import Codec.FFmpeg.Types (AVPacketSideData (..), AVStream (..))
 import Codec.FFmpeg.Enums (AVPacketSideDataType (..), avPktDataDisplaymatrix)
@@ -28,12 +26,11 @@ type DisplayRotationDegrees = Integer
 
 getDisplayRotation :: AVPacketSideData -> IO (Maybe DisplayRotationDegrees)
 getDisplayRotation avp = do
-  case tipe avp of 
-    avPktDataDisplaymatrix -> do
+  if tipe avp == avPktDataDisplaymatrix then do
       rot <- av_display_rotation_get (data_ avp)
       print rot
       pure $ if isnan rot > 0 then Nothing else Just (round rot)
-    _ -> pure Nothing
+  else pure Nothing
 
 displayRotationCSize :: CSize
 displayRotationCSize = fromIntegral (sizeOf (1::CInt) * 9)

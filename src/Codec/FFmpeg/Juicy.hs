@@ -22,6 +22,9 @@ import Foreign.C.Types
 import Foreign.Storable (sizeOf)
 import Codec.FFmpeg.Display (DisplayRotationDegrees)
 import Codec.Picture.Extra (rotate180, rotateRight90, rotateLeft90)
+import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.Trans.Class (lift)
+import Control.Monad (guard, (>=>), (<=<))
 
 -- | Convert 'AVFrame' to a 'Vector'.
 frameToVector :: AVFrame -> IO (Maybe (V.Vector CUChar))
@@ -131,8 +134,6 @@ imageReaderT ::
 imageReaderT mdisp is = do
   (r, c, md) <- frameReader (juicyPixelFormat ([] :: [p])) is
   pure (aux md r, c, md)
-  -- fmap (first3 (runMaybeT . aux (toJuicyImage mdisp)))
-  --   . frameReader (juicyPixelFormat ([] :: [p]))
   where
     aux md r = runMaybeT $ do
       frame <- MaybeT r

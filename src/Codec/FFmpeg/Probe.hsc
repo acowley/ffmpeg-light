@@ -98,13 +98,6 @@ withStream sid f = nbStreams >>= \ns -> if sid >= ns
         streams <- liftIO $ (#peek AVFormatContext, streams) (getPtr ctx)
         liftIO (peekElemOff streams sid) >>= runReaderT (unAvStreamT f)
 
--- codecContext :: MonadIO m => AvStreamT m (Maybe AVCodecContext)
--- codecContext = do
---     p <- ask >>= (liftIO . (#peek AVStream, codec) . getPtr)
---     if (p /= nullPtr)
---         then return $ Just $ AVCodecContext p
---         else return Nothing
-
 codecMediaTypeName :: MonadIO m => AVCodecContext -> AvStreamT m String
 codecMediaTypeName cctx = liftIO $
     (#peek AVCodecContext, codec_type) (getPtr cctx) >>=

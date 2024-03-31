@@ -17,7 +17,7 @@ import Codec.Picture
 import Control.Monad (when, void, forM_)
 import Data.Bits
 import Data.IORef
-import Data.Maybe (fromMaybe, isNothing)
+import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Traversable (for)
 import Data.Vector.Storable (Vector)
@@ -27,7 +27,6 @@ import Foreign.C.String
 import Foreign.C.Types
 import Foreign.ForeignPtr (touchForeignPtr)
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array (advancePtr)
 import Foreign.Marshal.Utils
 
 import Codec.FFmpeg.Internal.Debug
@@ -320,10 +319,6 @@ initVideoStream vp oc = do
     getCodecFlags ctx >>= setCodecFlags ctx . (.|. avCodecFlagGlobalHeader)
 #endif
 
-  -- _ <- withCString "vprofile" $ \kStr ->
-  --        withCString (preset ep) $ \vStr ->
-  --          av_opt_set ((#ptr AVCodecContext, priv_data) (getPtr ctx))
-  --                     kStr vStr 0
   when (not . null $ vpPreset vp) . void $
     withCString "preset" $ \kStr ->
       withCString (vpPreset vp) $ \vStr ->
@@ -333,7 +328,7 @@ initVideoStream vp oc = do
   when (rOpen < 0) (error "Couldn't open codec")
 
   codecParams <- getCodecParams st
-  runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+  _ <- runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
 
   return (st, ctx)
 
@@ -360,10 +355,10 @@ initAudioStream params oc = do
 
   setChannelLayout ctx (apChannelLayout params)
 
-  runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
+  _ <- runWithError "Could not open audio codec" (open_codec ctx cod nullPtr)
 
   codecParams <- getCodecParams st
-  runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
+  _ <- runWithError "Could not copy params" (avcodec_parameters_from_context codecParams ctx)
 
 #if LIBAVFORMAT_VERSION_MAJOR < 57
   getCodecFlags ctx >>= setCodecFlags ctx . (.|. codecFlagGlobalHeader)
@@ -401,10 +396,10 @@ allocOutputContext outputFormat fname = do
         Nothing -> (\f -> f nullPtr)
   oc <- alloca $ \ocTmp -> do
         r <- withCString fname $ \fname' ->
-                withFormat $ \format ->
+                withFormat $ \fmt ->
                   avformat_alloc_output_context2
                     ocTmp (AVOutputFormat nullPtr)
-                    format fname'
+                    fmt fname'
         when (r < 0)
               (error "Couldn't allocate output format context")
         peek ocTmp
@@ -429,7 +424,6 @@ avio_close_check oc = do r <- getIOContext oc >>= avio_close
 encode_video_check :: AVCodecContext -> AVPacket -> Maybe AVFrame -> IO Bool
 encode_video_check ctx pkt frame =
   do
-    --r <- avcodec_encode_video2 ctx pkt frame' gotOutput
     r <- avcodec_send_frame ctx frame'
     if (r == 0 || r == c_AVERROR_EAGAIN) then do 
       e <- avcodec_receive_packet ctx pkt
@@ -566,10 +560,9 @@ avWriter :: Maybe String
          -> IO AVWriterContext
 avWriter outputFormat sp fname = do
   oc <- allocOutputContext outputFormat fname
-  outputFormat <- getOutputFormat oc
-  audioCodecId <- getAudioCodecID outputFormat
-  videoCodecId <- getVideoCodecID outputFormat
-
+  oFormat <- getOutputFormat oc
+  audioCodecId <- getAudioCodecID oFormat
+  
   -- Initializing the streams needs to be done before opening the file
   -- and checking the header because it can modify fields that are used
   -- for time scaling so we have this rather ugly code.
@@ -579,7 +572,6 @@ avWriter outputFormat sp fname = do
                     (Just <$> initAudioStream ap oc)
                     
   avio_open_check oc fname
-  numStreams <- getNumStreams oc
   withCString fname (\str -> av_dump_format oc 0 str 1)
   write_header_check oc
   
@@ -618,8 +610,7 @@ avWriter outputFormat sp fname = do
         frameNum <- newIORef (0::Int)
 
         let framePeriod = AVRational 1 (fromIntegral $ vpFps vp)
-        fps <- getFps ctx
-
+        
           -- The stream time_base can be changed by the call to
           -- 'write_header_check', so we read it back here to establish a way
           -- of scaling the nominal, desired frame rate (given by
@@ -727,10 +718,9 @@ avWriter outputFormat sp fname = do
         return go
 
       initializeAudio :: AVStream
-                      -> AVCodec
                       -> AVCodecContext
                       -> IO (Maybe AVFrame -> IO ())
-      initializeAudio st codec ctx = do
+      initializeAudio st ctx = do
         if audioCodecId /= avCodecIdNone
           then do
             pkt <- av_packet_alloc
@@ -753,14 +743,14 @@ avWriter outputFormat sp fname = do
                       -- TODO: Not sure this pts will be exactly accurate.
                       -- Also, we need to set duration too because it doesn't seem to be set.
                       setPts pkt =<< readIORef lastPts
-                      runWithError "Error while writing audio frame"
+                      _ <- runWithError "Error while writing audio frame"
                                   (av_interleaved_write_frame oc pkt)
                       return ()
                 writeAudioFrame :: Maybe AVFrame -> IO ()
                 writeAudioFrame Nothing = do
                   read_pkts
                   writeClose
-                  codec_close ctx
+                  _ <- codec_close ctx
                   return ()
                 writeAudioFrame (Just frame) = writeAudioFrame' frame
 
@@ -777,29 +767,29 @@ avWriter outputFormat sp fname = do
                   modifyIORef lastPts (const newPts)
                   modifyIORef frameNum (+ fromIntegral numSamples)
 
-                  runWithError "Error encoding audio"
+                  _ <- runWithError "Error encoding audio"
                       (avcodec_send_frame ctx frame)
                   read_pkts
             return writeAudioFrame
           else
             return $ \_ -> return ()
 
-  videoWriter <- case mVideoStream of
+  vWriter <- case mVideoStream of
                    Just (vs, ctx) ->
                      withVideoParams sp (return (\_ -> return ()))
                        (initializeVideo vs ctx)
                    Nothing -> return (\_ -> return ())
-  audioWriter <- case mAudioStream of
+  aWriter <- case mAudioStream of
                    Just (as, codec, ctx) ->
                      withAudioParams sp (return $ \_ -> return ())
-                       (const (initializeAudio as codec ctx))
+                       (const (initializeAudio as ctx))
                    Nothing -> return $ \_ -> return ()
 
   return $ AVWriterContext
     { avwVideoCodecContext = snd <$> mVideoStream
     , avwAudioCodecContext = (\(_, _, ctx) -> ctx) <$> mAudioStream
-    , avwVideoWriter = videoWriter
-    , avwAudioWriter = audioWriter
+    , avwVideoWriter = vWriter
+    , avwAudioWriter = aWriter
     }
 
 -- | Open a target file for writing a video stream. The function
@@ -813,7 +803,7 @@ frameWriterRgb :: EncodingParams -> FilePath
                -> IO (Maybe (Vector CUChar) -> IO ())
 frameWriterRgb ep f = do
   let aux pixels = (avPixFmtRgb24, V2 (epWidth ep) (epHeight ep), pixels)
-  videoWriter <- frameWriter ep f
-  return $ \pix -> videoWriter (aux <$> pix)
+  vWriter <- frameWriter ep f
+  return $ \pix -> vWriter (aux <$> pix)
 
 

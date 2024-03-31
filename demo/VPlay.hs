@@ -7,10 +7,11 @@ import Codec.FFmpeg.Common
 import Codec.FFmpeg.Decode hiding (av_malloc)
 
 import Control.Concurrent.MVar (newMVar, takeMVar, putMVar)
-import Control.Monad.IO.Class (MonadIO)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Except
 import Control.Monad.Loops
 import Control.Monad.Trans.Maybe
+import Control.Monad (when)
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Unsafe (unsafePackCStringFinalizer)
