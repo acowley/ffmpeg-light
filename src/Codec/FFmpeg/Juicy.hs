@@ -76,15 +76,15 @@ toJuicy frame = runMaybeT $ do
 
 -- | Convert an 'AVFrame' to an 'Image'.
 -- | Rotate it if display rotation is available as side data
-toJuicyImage :: forall p. (JuicyPixelFormat p) => Bool -> Maybe DisplayRotationDegrees -> AVFrame -> IO (Maybe (Image p))
-toJuicyImage rotateIfPres mdisp frame = runMaybeT $ do
+toJuicyImage :: forall p. (JuicyPixelFormat p) => Maybe DisplayRotationDegrees -> AVFrame -> IO (Maybe (Image p))
+toJuicyImage mdisp frame = runMaybeT $ do
   fmt <- lift $ getPixelFormat frame
   guard (fmt == juicyPixelFormat ([] :: [p]))
   w <- lift $ fromIntegral <$> getWidth frame
   h <- lift $ fromIntegral <$> getHeight frame
 
   img <- MaybeT $ fmap (Image w h . V.unsafeCast) <$> frameToVector frame
-  maybe (pure img) (pure . rotate img) (if rotateIfPres then mdisp else Nothing)
+  maybe (pure img) (pure . rotate img) mdisp
 
 rotate :: forall p. (JuicyPixelFormat p) =>  Image p  -> DisplayRotationDegrees -> Image p
 rotate img rotation
@@ -120,7 +120,11 @@ juicyPixelStride _ =
 
 type Metadata = NonEmpty (String, String)
 
--- | Read frames from a video stream.
+rotateImage :: JuicyPixelFormat p => Bool -> VideoStreamMetadata -> AVFrame -> MaybeT IO (Image p)
+rotateImage rotateIfPresent md = MaybeT . toJuicyImage (if rotateIfPresent then displayRotation md else Nothing)
+
+-- | Read frames from a video stream. Optionally rotate the image
+-- if display rotation metadata is present
 imageReaderT ::
   forall m p.
   ( Functor m,
@@ -131,13 +135,11 @@ imageReaderT ::
   Bool -> 
   InputSource ->
   m (IO (Maybe (Image p)), IO (), VideoStreamMetadata)
-imageReaderT mdisp is = do
+imageReaderT rotateIfPresent is = do
   (r, c, md) <- frameReader (juicyPixelFormat ([] :: [p])) is
   pure (aux md r, c, md)
   where
-    aux md r = runMaybeT $ do
-      frame <- MaybeT r
-      MaybeT $ toJuicyImage mdisp (displayRotation md) frame
+    aux md r = runMaybeT $ MaybeT r >>= rotateImage rotateIfPresent md
 
 -- | Read frames from a video stream. Errors are thrown as
 -- 'IOException's.
@@ -149,7 +151,8 @@ imageReader ::
 imageReader mdisp = either error return <=< (runExceptT . imageReaderT mdisp)
 
 -- | Read time stamped frames from a video stream. Time is given in
--- seconds from the start of the stream.
+-- seconds from the start of the stream. Optionally rotate the image
+-- if display rotation metadata is present
 imageReaderTimeT ::
   forall m p.
   ( Functor m,
@@ -160,13 +163,13 @@ imageReaderTimeT ::
   Bool ->
   InputSource ->
   m (IO (Maybe (Image p, Double)), IO (), VideoStreamMetadata)
-imageReaderTimeT mdisp is = do
+imageReaderTimeT rotateIfPresent is = do
   (r, c, md) <- frameReaderTime (juicyPixelFormat ([] :: [p])) is
   pure (aux md r, c, md)
   where
     aux md r = runMaybeT $ do
       (frame, ts) <- MaybeT r
-      frame' <- MaybeT $ toJuicyImage mdisp (displayRotation md) frame
+      frame' <- rotateImage rotateIfPresent md frame
       return (frame', ts)
 
 -- | Read time stamped frames from a video stream. Time is given in

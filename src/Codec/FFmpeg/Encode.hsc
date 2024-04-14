@@ -514,7 +514,7 @@ videoWriter ep fname = do
 
 data StreamParams =
     JustVideo VideoParams
-  | JustAudio AudioParams  
+  | JustAudio AudioParams
   | AudioVideo AudioParams VideoParams
 
 withVideoParams :: StreamParams -> a -> (VideoParams -> a) -> a
@@ -574,7 +574,6 @@ avWriter outputFormat sp fname = do
   avio_open_check oc fname
   withCString fname (\str -> av_dump_format oc 0 str 1)
   write_header_check oc
-  
   alreadyClosedRef <- newIORef False
   let writeClose = do
         alreadyClosed <- readIORef alreadyClosedRef
