@@ -394,7 +394,7 @@ getStreamSideData avstream = liftIO $ do
   else  pure []
 
 extractDisplayRotation :: MonadIO m => [AVPacketSideData] -> m (Maybe DisplayRotationDegrees)
-extractDisplayRotation lst = go Nothing lst
+extractDisplayRotation = go Nothing
   where 
     go dsp@(Just _) _ = pure dsp
     go Nothing (nextElem:xs) = do 

@@ -1,0 +1,26 @@
+# To build this container run
+# docker build --build-arg STRIPE_SECRET=<from Stripe dashboard> --build-arg RECAPTCHA_SECRET=<from Google console> \
+# --build-arg PG_DATABASE_URL="host=host.docker.internal user=docker password=docker dbname=test" \ 
+# --add-host=host.docker.internal:host-gateway -f/home/sumit/dev/matrixid/matrixid-api-server-bin/deploy/Containerised/Containerfile .
+# Make sure the database on the host has a docker user with password docker and a database test
+# To run the container a docker volume is required for video storage
+# docker volume create image-store
+# and run the image with --mount source=image-store,target=/tmp
+
+FROM docker.io/alpine:3.19 as builder
+
+RUN apk update && apk add binutils-gold curl gcc g++ gmp-dev libc-dev zlib-dev libffi-dev make musl-dev ncurses-dev perl tar xz git pkgconf mercurial sudo openssl libpq-dev ffmpeg-dev gettext
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_NONINTERACTIVE=1 BOOTSTRAP_HASKELL_GHC_VERSION=9.4.8 BOOTSTRAP_HASKELL_INSTALL_NO_STACK=1 sh
+
+COPY . /build/ffmpeg-light
+
+WORKDIR /build/ffmpeg-light
+
+RUN --mount=type=cache,target=/root/.cabal/ . /root/.ghcup/env && ghcup install cabal latest
+RUN --mount=type=cache,target=/root/.cabal/ . /root/.ghcup/env && ghcup set cabal latest
+RUN --mount=type=cache,target=/root/.cabal/ . /root/.ghcup/env && cabal update
+RUN --mount=type=cache,target=/root/.cabal/ . /root/.ghcup/env && cabal build --dependencies-only all
+RUN --mount=type=cache,target=/root/.cabal/ . /root/.ghcup/env && cabal build -fBuildAudioExtractDemo -fBuildAudioSinDemo -fBuildDemo -fBuildRasterDemo -fBuildTranscodeDemo
+
+CMD /bin/sh

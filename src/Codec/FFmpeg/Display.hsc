@@ -11,11 +11,8 @@ import Codec.FFmpeg.Types (AVPacketSideData (..), AVStream (..))
 import Codec.FFmpeg.Enums (AVPacketSideDataType (..), avPktDataDisplaymatrix)
 import Codec.FFmpeg.Common (av_malloc)
 
-#include <math.h>
 #include <libavutil/display.h>
 
-foreign import ccall unsafe "isnan"
-  isnan    :: CDouble -> CInt
 
 -- double av_display_rotation_get(const int32_t matrix[9]);
 
@@ -29,7 +26,7 @@ getDisplayRotation avp = do
   if tipe avp == avPktDataDisplaymatrix then do
       rot <- av_display_rotation_get (data_ avp)
       print rot
-      pure $ if isnan rot > 0 then Nothing else Just (round rot)
+      pure $ if isNaN rot then Nothing else Just (round rot)
   else pure Nothing
 
 displayRotationCSize :: CSize
