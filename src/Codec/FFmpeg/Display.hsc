@@ -1,0 +1,50 @@
+{-# LANGUAGE ForeignFunctionInterface, FlexibleInstances,
+             GeneralizedNewtypeDeriving #-}
+
+module Codec.FFmpeg.Display where
+
+import Foreign.Ptr
+import Foreign.Storable
+import Foreign.C.Types
+
+import Codec.FFmpeg.Types (AVPacketSideData (..), AVStream (..))
+import Codec.FFmpeg.Enums (AVPacketSideDataType (..), avPktDataDisplaymatrix)
+import Codec.FFmpeg.Common (av_malloc)
+
+#include <libavutil/display.h>
+
+
+-- double av_display_rotation_get(const int32_t matrix[9]);
+
+foreign import ccall "av_display_rotation_get"
+  av_display_rotation_get :: Ptr () -> IO CDouble
+
+type DisplayRotationDegrees = Integer
+
+getDisplayRotation :: AVPacketSideData -> IO (Maybe DisplayRotationDegrees)
+getDisplayRotation avp = do
+  if tipe avp == avPktDataDisplaymatrix then do
+      rot <- av_display_rotation_get (data_ avp)
+      print rot
+      pure $ if isNaN rot then Nothing else Just (round rot)
+  else pure Nothing
+
+displayRotationCSize :: CSize
+displayRotationCSize = fromIntegral (sizeOf (1::CInt) * 9)
+
+newtype DisplayRotation = DisplayRotation (Ptr ()) deriving (Storable)
+
+foreign import ccall "av_display_rotation_set"
+  av_display_rotation_set :: DisplayRotation -> CDouble -> IO ()
+
+setDisplayRotation :: Double -> IO DisplayRotation
+setDisplayRotation angle = do
+  arr <- DisplayRotation <$> av_malloc displayRotationCSize
+  av_display_rotation_set arr (CDouble angle)
+  pure arr
+
+foreign import ccall "av_stream_add_side_data"
+  av_stream_add_side_data :: AVStream -> AVPacketSideDataType -> Ptr () -> CSize -> IO ()
+
+addAsSideData :: AVStream -> DisplayRotation -> IO ()
+addAsSideData avs (DisplayRotation ptr) = av_stream_add_side_data avs avPktDataDisplaymatrix (castPtr ptr) displayRotationCSize

@@ -23,7 +23,7 @@ foreign import ccall "swr_get_out_samples"
   swr_get_out_samples :: SwrContext -> CInt -> IO CInt
 
 data AudioParams = AudioParams
-  { apChannelLayout :: CULong
+  { apChannelLayout :: AVChannelLayout
   , apSampleRate    :: CInt
   , apSampleFormat  :: AVSampleFormat
   }
@@ -51,8 +51,7 @@ makeResampler ctx inParams outParams = do
                 srcData = castPtr (hasData frame)
             dstDataPtr <- malloc
             lineSize <- malloc
-            dstChannelCount <- av_get_channel_layout_nb_channels
-                (apChannelLayout outParams)
+            let dstChannelCount = numChannels (apChannelLayout outParams)
             _ <- runWithError "Could not alloc samples"
                      (av_samples_alloc_array_and_samples dstDataPtr lineSize
                      dstChannelCount (fromIntegral dstSamples)
@@ -114,19 +113,14 @@ initSwrContext inParams outParams = do
         cStr <- newCString str
         _ <- av_opt_set_int (getPtr swr) cStr (fromIntegral i) 0
         free cStr
-      set_sample_fmt str fmt = do
-        cStr <- newCString str
-        _ <- av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
-        free cStr
+      set_sample_fmt str fmt = withCString str $ \cStr -> av_opt_set_sample_fmt (getPtr swr) cStr fmt 0
 
-  -- set_int "in_channel_count" (aoChannelCount inParams)
-  set_int "in_channel_layout" (apChannelLayout inParams)
+  void $ set_channel_layout swr "in_ch_layout" (apChannelLayout inParams)
   set_int "in_sample_rate" (apSampleRate inParams)
-  set_sample_fmt "in_sample_fmt" (apSampleFormat inParams)
-  -- set_int "out_channel_count" (aoChannelCount outParams)
-  set_int "out_channel_layout" (apChannelLayout inParams)
+  void $ set_sample_fmt "in_sample_fmt" (apSampleFormat inParams)
+  void $ set_channel_layout swr "out_ch_layout" (apChannelLayout outParams)
   set_int "out_sample_rate" (apSampleRate outParams)
-  set_sample_fmt "out_sample_fmt" (apSampleFormat outParams)
+  void $ set_sample_fmt "out_sample_fmt" (apSampleFormat outParams)
 
   void $ runWithError "Failed to initialize the resampling context" (swr_init swr)
 

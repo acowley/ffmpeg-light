@@ -1,5 +1,5 @@
 name:                ffmpeg-light
-version:             0.14.1
+version:             0.15.0
 synopsis:            Minimal bindings to the FFmpeg library.
 
 description:         Stream frames from an encoded video, or stream frames to
@@ -28,7 +28,7 @@ category:            Codec
 build-type:          Simple
 extra-source-files:  src/hscMacros.h, src/nameCompat.h, CHANGELOG.md
 cabal-version:       >=1.10
-tested-with:         GHC == 8.6.5 || == 8.8.4 || == 8.10.7 || == 9.0.2 || == 9.2.1 || == 9.6.11
+tested-with:         GHC == 8.8.4 || == 8.10.7 || == 9.2.8 || == 9.4.8 || == 9.6.4
 
 source-repository head
   type:     git
@@ -74,6 +74,7 @@ library
                        Codec.FFmpeg.Juicy,
                        Codec.FFmpeg.Probe,
                        Codec.FFmpeg.Resampler,
+                       Codec.FFmpeg.Display,
                        Codec.FFmpeg.Scaler,
                        Codec.FFmpeg.Types,
                        Codec.FFmpeg.Internal.Debug,
@@ -87,7 +88,9 @@ library
                        transformers >= 0.4.1 && < 0.7,
                        mtl >= 2.2.1 && < 2.4,
                        JuicyPixels >= 3.1 && < 3.4,
-                       bytestring
+                       JuicyPixels-extra >= 0.5.2,
+                       bytestring,
+                       containers
 
   pkgconfig-depends:   libavutil, libavformat, libavcodec, libswscale, libavdevice,
                        libswresample

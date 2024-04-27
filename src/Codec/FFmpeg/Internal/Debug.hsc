@@ -36,7 +36,6 @@ debugCodecContext (AVCodecContext p) = do
   (#peek AVCodecContext, gop_size) p >>= si "gop_size"
   (#peek AVCodecContext, bit_rate) p >>= si "bit_rate"
   (#peek AVCodecContext, max_b_frames) p >>= si "max_b_frames"
-  (#peek AVCodecContext, b_frame_strategy) p >>= si "b_frame_strategy"
   (#peek AVCodecContext, qmin) p >>= si "qmin"
   (#peek AVCodecContext, qmax) p >>= si "qmax"
   (#peek AVCodecContext, me_cmp) p >>= si "me_cmp"

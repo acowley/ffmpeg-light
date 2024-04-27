@@ -7,27 +7,27 @@ packages:
 - completed:
     hackage: Rasterific-0.6.1.1@sha256:02890bd3903e37aebfe8c89909ea108a9fc253053f5368ce0e3ff4544fbaa7d6,5324
     pantry-tree:
-      size: 6278
       sha256: bb38f7aafda4c993e43e8aca3feca1083e5a8c2cec4be3756206b87251a040c7
+      size: 6278
   original:
     hackage: Rasterific-0.6.1.1
 - completed:
     hackage: FontyFruity-0.5.3.2@sha256:cd43670271c4b96d7a44d199ba52ed087281db52427332077bad187ad89d8bd9,2112
     pantry-tree:
-      size: 1312
       sha256: 686e11a72cf6e6276744d11e838ae880e52f4fbf29dc1c909901312e808d5db5
+      size: 1312
   original:
     hackage: FontyFruity-0.5.3.2
 - completed:
     hackage: sdl2-2.1.3.1@sha256:13f4bbee291193e48d33888ee6fba3696fe04b464157fca3a9e7fc443bba4dc1,9466
     pantry-tree:
-      size: 6182
       sha256: b6090e850aa6f1f63fe1af36b79d1cd01507be3bf19fe17e251f78656eb2267b
+      size: 6182
   original:
     hackage: sdl2-2.1.3.1
 snapshots:
 - completed:
-    size: 537868
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/9/21.yaml
-    sha256: 0a3be91c2bce851de4755003cfb1d85d62b6f90276231fcc305729c0c5c864a9
-  original: lts-9.21
+    sha256: e019cd29e3f7f9dbad500225829a3f7a50f73c674614f2f452e21bb8bf5d99ea
+    size: 650253
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/20/24.yaml
+  original: lts-20.24

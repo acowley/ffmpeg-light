@@ -34,7 +34,7 @@ copy from to format w h = do
   let ep = (FF.defaultH264 (fromIntegral w) (fromIntegral h))
             -- { FF.epFormatName = Just format }
             -- TODO: get this working again
-  (getFrame, cleanup) <- FF.imageReader (FF.File from)
+  (getFrame, cleanup, _) <- FF.imageReader False (FF.File from)
   putFrame <- FF.imageWriter ep to
   loop getFrame cleanup putFrame (\x -> return x)
 

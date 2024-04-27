@@ -9,6 +9,7 @@ import Foreign.C.Types
 import Foreign.Ptr
 import Foreign.Storable
 import Foreign.Marshal.Alloc (malloc)
+import Control.Monad.IO.Class (liftIO, MonadIO)
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -30,6 +31,8 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #mkField OutputFormat, AVOutputFormat
 #mkField IOContext, AVIOContext
 #mkField InputFormat, AVInputFormat
+#mkField VideoCodec, AVCodec
+#mkField AudioCodec, AVCodec
 
 #hasField AVFormatContext, NumStreams, nb_streams
 #hasField AVFormatContext, Streams, streams
@@ -37,11 +40,18 @@ newtype AVFormatContext = AVFormatContext (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFormatContext, InputFormat, iformat
 #hasField AVFormatContext, IOContext, pb
 #hasField AVFormatContext, VideoCodecID, video_codec_id
+#hasField AVFormatContext, VideoCodec, video_codec
+#hasField AVFormatContext, AudioCodec, audio_codec
 
-setFilename :: AVFormatContext -> String -> IO ()
-setFilename ctx fn =
+structMetadata :: (MonadIO m, HasPtr a) => a -> m (Maybe AVDictionary)
+structMetadata ctx = do
+  dict@(AVDictionary dictPtr) <- liftIO $ (#peek AVFormatContext, metadata) (getPtr ctx)
+  pure $ if dictPtr == nullPtr then Nothing else (Just dict)
+
+setUrl :: AVFormatContext -> String -> IO ()
+setUrl ctx fn =
     do let ptr  = getPtr ctx
-           dst   = (#ptr AVFormatContext, filename) ptr
+           dst   = (#ptr AVFormatContext, url) ptr
            bytes = map (fromIntegral . fromEnum) fn
        zipWithM_ (pokeElemOff dst) bytes [(0 :: CInt) ..]
 
@@ -88,12 +98,13 @@ foreign import ccall "avcodec_alloc_context3"
 #mkField TicksPerFrame, CInt
 #mkField RawAspectRatio, AVRational
 #mkField SampleRate, CInt
-#mkField ChannelLayout, CULong
-#mkField Channels, CInt
+#mkField ChannelLayout, AVChannelLayout
 #mkField FrameSize, CInt
 #mkField FrameRate, AVRational
+#mkField Codec, AVCodec
 
 #hasField AVCodecContext, BitRate, bit_rate
+#hasField AVCodecContext, Codec, codec
 #hasField AVCodecContext, Width, width
 #hasField AVCodecContext, Height, height
 #hasField AVCodecContext, TimeBase, time_base
@@ -105,8 +116,7 @@ foreign import ccall "avcodec_alloc_context3"
 #hasField AVCodecContext, TicksPerFrame, ticks_per_frame
 #hasField AVCodecContext, RawAspectRatio, sample_aspect_ratio
 #hasField AVCodecContext, SampleRate, sample_rate
-#hasField AVCodecContext, ChannelLayout, channel_layout
-#hasField AVCodecContext, Channels, channels
+#hasField AVCodecContext, ChannelLayout, ch_layout
 #hasField AVCodecContext, SampleFormat, sample_fmt
 #hasField AVCodecContext, FrameSize, frame_size
 #hasField AVCodecContext, FrameRate, framerate
@@ -135,24 +145,55 @@ foreign import ccall "avcodec_parameters_from_context"
                                   -> AVCodecContext
                                   -> IO CInt
 
+foreign import ccall "avcodec_parameters_to_context"
+  avcodec_parameters_to_context :: AVCodecContext
+                                  -> AVCodecParameters
+                                  -> IO CInt
+
+data AVPacketSideData = AVPacketSideData {
+  data_ :: Ptr (),
+  size :: CSize,
+  tipe :: AVPacketSideDataType 
+}
+
+instance Storable AVPacketSideData where
+  sizeOf _ = #size AVPacketSideData
+  alignment _ = #size AVPacketSideData
+  peek ptr = AVPacketSideData 
+    <$> (#peek AVPacketSideData, data) ptr
+    <*> (#peek AVPacketSideData, size) ptr
+    <*> (#peek AVPacketSideData, type) ptr
+ 
+  poke ptr (AVPacketSideData dta sz t) = do 
+    (#poke AVPacketSideData, data) ptr dta
+    (#poke AVPacketSideData, size) ptr sz
+    (#poke AVPacketSideData, type) ptr t
+    
 newtype AVStream = AVStream (Ptr ()) deriving (Storable, HasPtr)
 #mkField Id, CInt
 #mkField CodecContext, AVCodecContext
 #mkField StreamIndex, CInt
 #mkField CodecParams, AVCodecParameters
+#mkField Dictionary, AVDictionary
+#mkField SideData, (Ptr AVPacketSideData)
+#mkField NbSideData, CInt
+
+-- Update this to include side data & metadata in the structure
 
 #hasField AVStream, Id, id
 #hasField AVStream, TimeBase, time_base
-#hasField AVStream, CodecContext, codec
 #hasField AVStream, StreamIndex, index
 #hasField AVStream, CodecParams, codecpar
+#hasField AVStream, Dictionary, metadata
+#hasField AVStream, SideData, side_data
+#hasField AVStream, NbSideData, nb_side_data
 
 newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #mkField LongName, CString
 #mkField Name, CString
 #mkField PixelFormats, (Ptr AVPixelFormat)
 #mkField SampleFormats, (Ptr AVSampleFormat)
-#mkField ChannelLayouts, (Ptr CULong)
+#mkField ChannelLayouts, (Ptr AVChannelLayout)
 #mkField SupportedSampleRates, (Ptr CInt)
 #mkField Capabilities, CInt
 
@@ -161,14 +202,24 @@ newtype AVCodec = AVCodec (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVCodec, CodecID, id
 #hasField AVCodec, PixelFormats, pix_fmts
 #hasField AVCodec, SampleFormats, sample_fmts
-#hasField AVCodec, ChannelLayouts, channel_layouts
+#hasField AVCodec, ChannelLayouts, ch_layouts
 #hasField AVCodec, SupportedSampleRates, supported_samplerates
 #hasField AVCodec, Capabilities, capabilities
 
+newtype AVDictionaryEntry = AVDictionaryEntry (Ptr ()) deriving (Storable, HasPtr)
+#mkField Key, CString
+#mkField Value, CString
+
+#hasField AVDictionaryEntry, Key, key
+#hasField AVDictionaryEntry, Value, value
+
+
+-- Use av_dict_get and av_dict_set to actually access this structure
 newtype AVDictionary = AVDictionary (Ptr ()) deriving (Storable, HasPtr)
+  
 newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #mkField Pts, CLong
-#mkField PktPts, CLong
+#mkField PktDts, CLong
 #mkField LineSize, CInt
 #mkField Data, (Ptr (Ptr ()))
 #mkField ExtendedData, (Ptr (Ptr ()))
@@ -181,17 +232,13 @@ newtype AVFrame = AVFrame (Ptr ()) deriving (Storable, HasPtr)
 #hasField AVFrame, Height, height
 #hasField AVFrame, LineSize, linesize
 #hasField AVFrame, Pts, pts
-#hasField AVFrame, PktPts, pkt_pts
+#hasField AVFrame, PktDts, pkt_dts
 #hasField AVFrame, Data, data
 #hasField AVFrame, ExtendedData, extended_data
 #hasField AVFrame, NumSamples, nb_samples
 #hasField AVFrame, Format, format
-#hasField AVFrame, Channels, channels
-#hasField AVFrame, ChannelLayout, channel_layout
+#hasField AVFrame, ChannelLayout, ch_layout
 #hasField AVFrame, SampleRate, sample_rate
-
-newtype AVPicture = AVPicture (Ptr ()) deriving (Storable, HasPtr)
-#hasField AVPicture, Data, data
 
 newtype SwsContext = SwsContext (Ptr ()) deriving (Storable, HasPtr)
 newtype AVOutputFormat = AVOutputFormat (Ptr ()) deriving (Storable, HasPtr)
@@ -245,9 +292,6 @@ newtype AVPacket = AVPacket (Ptr ()) deriving (Storable, HasPtr)
 -- | @sizeof@ the 'AVPacket' structure in bytes.
 packetSize :: Int
 packetSize = #size AVPacket
-
-pictureSize :: Int
-pictureSize = #size AVPicture
 
 newtype SwrContext = SwrContext (Ptr ()) deriving (Storable, HasPtr)
 
@@ -373,3 +417,111 @@ data CameraConfig =
 
 defaultCameraConfig :: CameraConfig
 defaultCameraConfig = CameraConfig (Just 30) Nothing Nothing
+
+newtype AVChannelCustom = AVChannelCustom (Ptr ()) deriving (Storable, HasPtr)
+
+data AVChannelLayout = 
+  AVChannelLayout { order :: AVChannelOrder
+                  , numChannels :: CInt
+                  , mask :: Either CUInt AVChannelCustom                    
+                  } 
+
+instance Storable AVChannelLayout where
+  sizeOf _ = #size AVChannelLayout
+  alignment _ = #size AVChannelLayout
+  peek ptr = do
+    ord <- (#peek AVChannelLayout, order) ptr
+    nc <- (#peek AVChannelLayout, nb_channels) ptr
+    maskCust <- if ord == avChannelOrderCustom then do
+        custPtr <- (#peek AVChannelLayout, u) ptr
+        Right <$> (AVChannelCustom <$> peek custPtr) 
+      else
+        Left <$> (fromIntegral <$> peekULong)
+    pure (AVChannelLayout ord nc maskCust)
+    where
+      peekULong :: IO CUInt
+      peekULong = (#peek AVChannelLayout, u) ptr
+ 
+  poke ptr (AVChannelLayout ord nc maskCustom) = do 
+    (#poke AVChannelLayout, order) ptr ord
+    (#poke AVChannelLayout, nb_channels) ptr nc
+    case maskCustom of
+      Left msk -> (#poke AVChannelLayout, u) ptr msk
+      Right custom -> (#poke AVChannelLayout, u) ptr custom
+                               
+
+foreign import ccall "av_channel_layout_default"
+  av_channel_layout_default :: Ptr () -> CInt -> IO ()
+
+channelLayoutDefault :: Ptr () -> CInt -> IO AVChannelLayout
+channelLayoutDefault ptr chans = do
+  av_channel_layout_default ptr chans
+  peek (castPtr ptr)
+
+sizeOfAVChannelLayout :: Int
+sizeOfAVChannelLayout = #size AVChannelLayout
+
+
+cAV_CHANNEL_LAYOUT_MASK :: CInt -> CUInt -> AVChannelLayout
+cAV_CHANNEL_LAYOUT_MASK nb  m = AVChannelLayout avChannelOrderNative nb (Left m)
+
+cAV_CHANNEL_LAYOUT_MONO               :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_STEREO             :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2_1                :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_SURROUND           :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_3POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_4POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_4POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_2_2                :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_QUAD               :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT0_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_5POINT1_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT0_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_HEXAGONAL          :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1_BACK       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_6POINT1_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT0            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT0_FRONT      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1            :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE       :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK  :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_OCTAGONAL          :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_HEXADECAGONAL      :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_STEREO_DOWNMIX     :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_22POINT2           :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_AMBISONIC_FIRST_ORDER :: AVChannelLayout
+cAV_CHANNEL_LAYOUT_MONO              = cAV_CHANNEL_LAYOUT_MASK 1  cAV_CH_LAYOUT_MONO
+cAV_CHANNEL_LAYOUT_STEREO            = cAV_CHANNEL_LAYOUT_MASK 2  cAV_CH_LAYOUT_STEREO
+cAV_CHANNEL_LAYOUT_2POINT1           = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_2POINT1
+cAV_CHANNEL_LAYOUT_2_1               = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_2_1
+cAV_CHANNEL_LAYOUT_SURROUND          = cAV_CHANNEL_LAYOUT_MASK 3  cAV_CH_LAYOUT_SURROUND
+cAV_CHANNEL_LAYOUT_3POINT1           = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_3POINT1
+cAV_CHANNEL_LAYOUT_4POINT0           = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_4POINT0
+cAV_CHANNEL_LAYOUT_4POINT1           = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_4POINT1
+cAV_CHANNEL_LAYOUT_2_2               = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_2_2
+cAV_CHANNEL_LAYOUT_QUAD              = cAV_CHANNEL_LAYOUT_MASK 4  cAV_CH_LAYOUT_QUAD
+cAV_CHANNEL_LAYOUT_5POINT0           = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_5POINT0
+cAV_CHANNEL_LAYOUT_5POINT1           = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_5POINT1
+cAV_CHANNEL_LAYOUT_5POINT0_BACK      = cAV_CHANNEL_LAYOUT_MASK 5  cAV_CH_LAYOUT_5POINT0_BACK
+cAV_CHANNEL_LAYOUT_5POINT1_BACK      = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_5POINT1_BACK
+cAV_CHANNEL_LAYOUT_6POINT0           = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_6POINT0
+cAV_CHANNEL_LAYOUT_6POINT0_FRONT     = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_6POINT0_FRONT
+cAV_CHANNEL_LAYOUT_HEXAGONAL         = cAV_CHANNEL_LAYOUT_MASK 6  cAV_CH_LAYOUT_HEXAGONAL
+cAV_CHANNEL_LAYOUT_6POINT1           = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1
+cAV_CHANNEL_LAYOUT_6POINT1_BACK      = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1_BACK
+cAV_CHANNEL_LAYOUT_6POINT1_FRONT     = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_6POINT1_FRONT
+cAV_CHANNEL_LAYOUT_7POINT0           = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_7POINT0
+cAV_CHANNEL_LAYOUT_7POINT0_FRONT     = cAV_CHANNEL_LAYOUT_MASK 7  cAV_CH_LAYOUT_7POINT0_FRONT
+cAV_CHANNEL_LAYOUT_7POINT1           = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE      = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1_WIDE
+cAV_CHANNEL_LAYOUT_7POINT1_WIDE_BACK = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_7POINT1_WIDE_BACK
+cAV_CHANNEL_LAYOUT_OCTAGONAL         = cAV_CHANNEL_LAYOUT_MASK 8  cAV_CH_LAYOUT_OCTAGONAL
+cAV_CHANNEL_LAYOUT_HEXADECAGONAL     = cAV_CHANNEL_LAYOUT_MASK 16 cAV_CH_LAYOUT_HEXADECAGONAL
+cAV_CHANNEL_LAYOUT_STEREO_DOWNMIX    = cAV_CHANNEL_LAYOUT_MASK 2  cAV_CH_LAYOUT_STEREO_DOWNMIX
+cAV_CHANNEL_LAYOUT_22POINT2          = cAV_CHANNEL_LAYOUT_MASK 24 cAV_CH_LAYOUT_22POINT2
+cAV_CHANNEL_LAYOUT_AMBISONIC_FIRST_ORDER = AVChannelLayout avChannelOrderAmbisonic 4 (Left 0)

@@ -5,10 +5,12 @@ import Foreign.C.Types
 import Foreign.Storable (Storable)
 
 #include <libavcodec/avcodec.h>
+#include <libavcodec/packet.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
 #include <libavutil/pixfmt.h>
 #include <libavutil/mathematics.h>
+#include <libavutil/channel_layout.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 #include "nameCompat.h"
@@ -454,7 +456,6 @@ newtype CodecFlag = CodecFlag CInt deriving (Eq, Bits, Storable)
  , AV_CODEC_FLAG_LOOP_FILTER\
  , AV_CODEC_FLAG_GRAY\
  , AV_CODEC_FLAG_PSNR\
- , AV_CODEC_FLAG_TRUNCATED\
  , AV_CODEC_FLAG_INTERLACED_DCT\
  , AV_CODEC_FLAG_LOW_DELAY\
  , AV_CODEC_FLAG_GLOBAL_HEADER\
@@ -530,3 +531,239 @@ newtype AVSampleFormat = AVSampleFormat CInt deriving (Eq, Bits, Storable)
 
 getSampleFormatInt :: AVSampleFormat -> CInt
 getSampleFormatInt (AVSampleFormat i) = i
+
+newtype AVChannelOrder = AVChannelOrder CInt deriving (Eq, Bits, Storable, Show)
+#enum AVChannelOrder, AVChannelOrder \
+  , AV_CHANNEL_ORDER_UNSPEC\
+  , AV_CHANNEL_ORDER_NATIVE\
+  , AV_CHANNEL_ORDER_CUSTOM\
+  , AV_CHANNEL_ORDER_AMBISONIC
+
+getChannelOrderInt :: AVChannelOrder -> CInt
+getChannelOrderInt (AVChannelOrder i) = i
+
+av_dict_match_case :: CInt
+av_dict_match_case = 1   -- Only get an entry with exact-case key match. Only relevant in av_dict_get().
+
+av_dict_ignore_suffix :: CInt
+av_dict_ignore_suffix = 2   -- Return first entry in a dictionary whose first part corresponds to the search key,
+                            -- ignoring the suffix of the found key string. Only relevant in av_dict_get().
+
+av_dict_dont_strdup_key :: CInt
+av_dict_dont_strdup_key = 4   -- Take ownership of a key that's been
+                                   -- allocated with av_malloc() or another memory allocation function.
+av_dict_dont_strdup_val :: CInt
+av_dict_dont_strdup_val = 8   -- Take ownership of a value that's been
+                                    -- allocated with av_malloc() or another memory allocation function.
+
+av_dict_dont_overwrite :: CInt
+av_dict_dont_overwrite = 16   -- Don't overwrite existing entries.
+
+av_dict_append :: CInt
+av_dict_append         = 32   -- If the entry already exists, append to it.  Note that no
+                                    -- delimiter is added, the strings are simply concatenated.
+
+av_dict_multikey :: CInt
+av_dict_multikey       = 64   -- Allow to store several equal keys in the dictionary
+
+c_AVERROR_EAGAIN :: CInt
+c_AVERROR_EAGAIN = #const AVERROR(EAGAIN)
+
+c_AVERROR_EOF :: CInt
+c_AVERROR_EOF = #const AVERROR_EOF
+
+newtype AVPacketSideDataType = AVPacketSideDataType CInt deriving (Eq, Bits, Storable)
+#enum AVPacketSideDataType, AVPacketSideDataType \
+  , AV_PKT_DATA_PALETTE \
+  , AV_PKT_DATA_NEW_EXTRADATA \
+  , AV_PKT_DATA_PARAM_CHANGE \
+  , AV_PKT_DATA_H263_MB_INFO \
+  , AV_PKT_DATA_REPLAYGAIN \
+  , AV_PKT_DATA_DISPLAYMATRIX \
+  , AV_PKT_DATA_STEREO3D \
+  , AV_PKT_DATA_AUDIO_SERVICE_TYPE \
+  , AV_PKT_DATA_QUALITY_STATS \
+  , AV_PKT_DATA_FALLBACK_TRACK \
+  , AV_PKT_DATA_CPB_PROPERTIES \
+  , AV_PKT_DATA_SKIP_SAMPLES \
+  , AV_PKT_DATA_JP_DUALMONO \
+  , AV_PKT_DATA_STRINGS_METADATA \
+  , AV_PKT_DATA_SUBTITLE_POSITION \
+  , AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL \
+  , AV_PKT_DATA_WEBVTT_IDENTIFIER \
+  , AV_PKT_DATA_WEBVTT_SETTINGS \
+  , AV_PKT_DATA_METADATA_UPDATE \
+  , AV_PKT_DATA_MPEGTS_STREAM_ID \
+  , AV_PKT_DATA_MASTERING_DISPLAY_METADATA \
+  , AV_PKT_DATA_SPHERICAL \
+  , AV_PKT_DATA_CONTENT_LIGHT_LEVEL \
+  , AV_PKT_DATA_A53_CC \
+  , AV_PKT_DATA_ENCRYPTION_INIT_INFO \
+  , AV_PKT_DATA_ENCRYPTION_INFO \
+  , AV_PKT_DATA_AFD \
+  , AV_PKT_DATA_PRFT \
+  , AV_PKT_DATA_ICC_PROFILE \
+  , AV_PKT_DATA_DOVI_CONF \
+  , AV_PKT_DATA_S12M_TIMECODE \
+  , AV_PKT_DATA_DYNAMIC_HDR10_PLUS \
+  , AV_PKT_DATA_NB
+
+newtype AVChannel = AVChannel CInt deriving (Eq, Bits, Storable)
+#enum AVChannel, AVChannel \
+    , AV_CHAN_NONE \
+    , AV_CHAN_FRONT_LEFT \
+    , AV_CHAN_FRONT_RIGHT \
+    , AV_CHAN_FRONT_CENTER \
+    , AV_CHAN_LOW_FREQUENCY \
+    , AV_CHAN_BACK_LEFT \
+    , AV_CHAN_BACK_RIGHT \
+    , AV_CHAN_FRONT_LEFT_OF_CENTER \
+    , AV_CHAN_FRONT_RIGHT_OF_CENTER \
+    , AV_CHAN_BACK_CENTER \
+    , AV_CHAN_SIDE_LEFT \
+    , AV_CHAN_SIDE_RIGHT \
+    , AV_CHAN_TOP_CENTER \
+    , AV_CHAN_TOP_FRONT_LEFT \
+    , AV_CHAN_TOP_FRONT_CENTER \
+    , AV_CHAN_TOP_FRONT_RIGHT \
+    , AV_CHAN_TOP_BACK_LEFT \
+    , AV_CHAN_TOP_BACK_CENTER \
+    , AV_CHAN_TOP_BACK_RIGHT \
+    , AV_CHAN_STEREO_LEFT \
+    , AV_CHAN_STEREO_RIGHT \
+    , AV_CHAN_WIDE_LEFT \
+    , AV_CHAN_WIDE_RIGHT \
+    , AV_CHAN_SURROUND_DIRECT_LEFT \
+    , AV_CHAN_SURROUND_DIRECT_RIGHT \
+    , AV_CHAN_LOW_FREQUENCY_2 \
+    , AV_CHAN_TOP_SIDE_LEFT \
+    , AV_CHAN_TOP_SIDE_RIGHT \
+    , AV_CHAN_BOTTOM_FRONT_CENTER \
+    , AV_CHAN_BOTTOM_FRONT_LEFT \
+    , AV_CHAN_BOTTOM_FRONT_RIGHT \
+    , AV_CHAN_UNUSED \
+    , AV_CHAN_UNKNOWN \
+    , AV_CHAN_AMBISONIC_BASE \
+    , AV_CHAN_AMBISONIC_END
+
+cAV_CH_FRONT_LEFT          :: CInt
+cAV_CH_FRONT_RIGHT         :: CInt
+cAV_CH_FRONT_CENTER        :: CInt
+cAV_CH_LOW_FREQUENCY       :: CInt
+cAV_CH_BACK_LEFT           :: CInt
+cAV_CH_BACK_RIGHT          :: CInt
+cAV_CH_FRONT_LEFT_OF_CENTER :: CInt
+cAV_CH_FRONT_RIGHT_OF_CENTER  :: CInt
+cAV_CH_BACK_CENTER         :: CInt
+cAV_CH_SIDE_LEFT           :: CInt
+cAV_CH_SIDE_RIGHT          :: CInt
+cAV_CH_TOP_CENTER          :: CInt
+cAV_CH_TOP_FRONT_LEFT      :: CInt
+cAV_CH_TOP_FRONT_CENTER    :: CInt
+cAV_CH_TOP_FRONT_RIGHT     :: CInt
+cAV_CH_TOP_BACK_LEFT       :: CInt
+cAV_CH_TOP_BACK_CENTER     :: CInt
+cAV_CH_TOP_BACK_RIGHT      :: CInt
+cAV_CH_STEREO_LEFT         :: CInt
+cAV_CH_STEREO_RIGHT        :: CInt
+cAV_CH_WIDE_LEFT           :: CInt
+cAV_CH_WIDE_RIGHT          :: CInt
+cAV_CH_SURROUND_DIRECT_LEFT :: CInt
+cAV_CH_SURROUND_DIRECT_RIGHT :: CInt
+cAV_CH_LOW_FREQUENCY_2     :: CInt
+cAV_CH_TOP_SIDE_LEFT       :: CInt
+cAV_CH_TOP_SIDE_RIGHT      :: CInt
+cAV_CH_BOTTOM_FRONT_CENTER :: CInt
+cAV_CH_BOTTOM_FRONT_LEFT   :: CInt
+cAV_CH_BOTTOM_FRONT_RIGHT  :: CInt
+cAV_CH_FRONT_LEFT            = #const AV_CH_FRONT_LEFT            
+cAV_CH_FRONT_RIGHT           = #const AV_CH_FRONT_RIGHT           
+cAV_CH_FRONT_CENTER          = #const AV_CH_FRONT_CENTER          
+cAV_CH_LOW_FREQUENCY         = #const AV_CH_LOW_FREQUENCY         
+cAV_CH_BACK_LEFT             = #const AV_CH_BACK_LEFT             
+cAV_CH_BACK_RIGHT            = #const AV_CH_BACK_RIGHT            
+cAV_CH_FRONT_LEFT_OF_CENTER  = #const AV_CH_FRONT_LEFT_OF_CENTER  
+cAV_CH_FRONT_RIGHT_OF_CENTER = #const AV_CH_FRONT_RIGHT_OF_CENTER 
+cAV_CH_BACK_CENTER           = #const AV_CH_BACK_CENTER           
+cAV_CH_SIDE_LEFT             = #const AV_CH_SIDE_LEFT             
+cAV_CH_SIDE_RIGHT            = #const AV_CH_SIDE_RIGHT            
+cAV_CH_TOP_CENTER            = #const AV_CH_TOP_CENTER            
+cAV_CH_TOP_FRONT_LEFT        = #const AV_CH_TOP_FRONT_LEFT        
+cAV_CH_TOP_FRONT_CENTER      = #const AV_CH_TOP_FRONT_CENTER      
+cAV_CH_TOP_FRONT_RIGHT       = #const AV_CH_TOP_FRONT_RIGHT       
+cAV_CH_TOP_BACK_LEFT         = #const AV_CH_TOP_BACK_LEFT         
+cAV_CH_TOP_BACK_CENTER       = #const AV_CH_TOP_BACK_CENTER       
+cAV_CH_TOP_BACK_RIGHT        = #const AV_CH_TOP_BACK_RIGHT        
+cAV_CH_STEREO_LEFT           = #const AV_CH_STEREO_LEFT           
+cAV_CH_STEREO_RIGHT          = #const AV_CH_STEREO_RIGHT          
+cAV_CH_WIDE_LEFT             = #const AV_CH_WIDE_LEFT             
+cAV_CH_WIDE_RIGHT            = #const AV_CH_WIDE_RIGHT            
+cAV_CH_SURROUND_DIRECT_LEFT  = #const AV_CH_SURROUND_DIRECT_LEFT  
+cAV_CH_SURROUND_DIRECT_RIGHT = #const AV_CH_SURROUND_DIRECT_RIGHT 
+cAV_CH_LOW_FREQUENCY_2       = #const AV_CH_LOW_FREQUENCY_2       
+cAV_CH_TOP_SIDE_LEFT         = #const AV_CH_TOP_SIDE_LEFT         
+cAV_CH_TOP_SIDE_RIGHT        = #const AV_CH_TOP_SIDE_RIGHT        
+cAV_CH_BOTTOM_FRONT_CENTER   = #const AV_CH_BOTTOM_FRONT_CENTER   
+cAV_CH_BOTTOM_FRONT_LEFT     = #const AV_CH_BOTTOM_FRONT_LEFT     
+cAV_CH_BOTTOM_FRONT_RIGHT    = #const AV_CH_BOTTOM_FRONT_RIGHT
+
+
+cAV_CH_LAYOUT_MONO             :: CUInt
+cAV_CH_LAYOUT_STEREO           :: CUInt
+cAV_CH_LAYOUT_2POINT1          :: CUInt
+cAV_CH_LAYOUT_2_1              :: CUInt
+cAV_CH_LAYOUT_SURROUND         :: CUInt
+cAV_CH_LAYOUT_3POINT1          :: CUInt
+cAV_CH_LAYOUT_4POINT0          :: CUInt
+cAV_CH_LAYOUT_4POINT1          :: CUInt
+cAV_CH_LAYOUT_2_2              :: CUInt
+cAV_CH_LAYOUT_QUAD             :: CUInt
+cAV_CH_LAYOUT_5POINT0          :: CUInt
+cAV_CH_LAYOUT_5POINT1          :: CUInt
+cAV_CH_LAYOUT_5POINT0_BACK     :: CUInt
+cAV_CH_LAYOUT_5POINT1_BACK     :: CUInt
+cAV_CH_LAYOUT_6POINT0          :: CUInt
+cAV_CH_LAYOUT_6POINT0_FRONT    :: CUInt
+cAV_CH_LAYOUT_HEXAGONAL        :: CUInt
+cAV_CH_LAYOUT_6POINT1          :: CUInt
+cAV_CH_LAYOUT_6POINT1_BACK     :: CUInt
+cAV_CH_LAYOUT_6POINT1_FRONT    :: CUInt
+cAV_CH_LAYOUT_7POINT0          :: CUInt
+cAV_CH_LAYOUT_7POINT0_FRONT    :: CUInt
+cAV_CH_LAYOUT_7POINT1          :: CUInt
+cAV_CH_LAYOUT_7POINT1_WIDE     :: CUInt
+cAV_CH_LAYOUT_7POINT1_WIDE_BACK:: CUInt
+cAV_CH_LAYOUT_OCTAGONAL        :: CUInt
+cAV_CH_LAYOUT_HEXADECAGONAL    :: CUInt
+cAV_CH_LAYOUT_STEREO_DOWNMIX   :: CUInt
+cAV_CH_LAYOUT_22POINT2         :: CUInt
+
+cAV_CH_LAYOUT_MONO              = #const AV_CH_LAYOUT_MONO             
+cAV_CH_LAYOUT_STEREO            = #const AV_CH_LAYOUT_STEREO           
+cAV_CH_LAYOUT_2POINT1           = #const AV_CH_LAYOUT_2POINT1          
+cAV_CH_LAYOUT_2_1               = #const AV_CH_LAYOUT_2_1              
+cAV_CH_LAYOUT_SURROUND          = #const AV_CH_LAYOUT_SURROUND         
+cAV_CH_LAYOUT_3POINT1           = #const AV_CH_LAYOUT_3POINT1          
+cAV_CH_LAYOUT_4POINT0           = #const AV_CH_LAYOUT_4POINT0          
+cAV_CH_LAYOUT_4POINT1           = #const AV_CH_LAYOUT_4POINT1          
+cAV_CH_LAYOUT_2_2               = #const AV_CH_LAYOUT_2_2              
+cAV_CH_LAYOUT_QUAD              = #const AV_CH_LAYOUT_QUAD             
+cAV_CH_LAYOUT_5POINT0           = #const AV_CH_LAYOUT_5POINT0          
+cAV_CH_LAYOUT_5POINT1           = #const AV_CH_LAYOUT_5POINT1          
+cAV_CH_LAYOUT_5POINT0_BACK      = #const AV_CH_LAYOUT_5POINT0_BACK     
+cAV_CH_LAYOUT_5POINT1_BACK      = #const AV_CH_LAYOUT_5POINT1_BACK     
+cAV_CH_LAYOUT_6POINT0           = #const AV_CH_LAYOUT_6POINT0          
+cAV_CH_LAYOUT_6POINT0_FRONT     = #const AV_CH_LAYOUT_6POINT0_FRONT    
+cAV_CH_LAYOUT_HEXAGONAL         = #const AV_CH_LAYOUT_HEXAGONAL        
+cAV_CH_LAYOUT_6POINT1           = #const AV_CH_LAYOUT_6POINT1          
+cAV_CH_LAYOUT_6POINT1_BACK      = #const AV_CH_LAYOUT_6POINT1_BACK     
+cAV_CH_LAYOUT_6POINT1_FRONT     = #const AV_CH_LAYOUT_6POINT1_FRONT    
+cAV_CH_LAYOUT_7POINT0           = #const AV_CH_LAYOUT_7POINT0          
+cAV_CH_LAYOUT_7POINT0_FRONT     = #const AV_CH_LAYOUT_7POINT0_FRONT    
+cAV_CH_LAYOUT_7POINT1           = #const AV_CH_LAYOUT_7POINT1          
+cAV_CH_LAYOUT_7POINT1_WIDE      = #const AV_CH_LAYOUT_7POINT1_WIDE     
+cAV_CH_LAYOUT_7POINT1_WIDE_BACK = #const AV_CH_LAYOUT_7POINT1_WIDE_BACK
+cAV_CH_LAYOUT_OCTAGONAL         = #const AV_CH_LAYOUT_OCTAGONAL        
+cAV_CH_LAYOUT_HEXADECAGONAL     = #const AV_CH_LAYOUT_HEXADECAGONAL    
+cAV_CH_LAYOUT_STEREO_DOWNMIX    = #const AV_CH_LAYOUT_STEREO_DOWNMIX   
+cAV_CH_LAYOUT_22POINT2          = #const AV_CH_LAYOUT_22POINT2         

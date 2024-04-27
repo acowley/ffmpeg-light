@@ -18,12 +18,14 @@ main = do initFFmpeg
               eRes <- runExceptT $ frameAudioReader (File fname)
               case eRes of
                 Left er -> error er
-                Right (as, getFrame, cleanup) -> do
+                Right (as, getFrame, cleanup, _) -> do
                   putStrLn $ "bitrate : " ++ show (asBitRate as)
                   putStrLn $ "sample rate : " ++ show (asSampleRate as)
                   putStrLn $ "sample format : " ++
                       show (getSampleFormatInt (asSampleFormat as))
-                  putStrLn $ "channel layout : " ++ show (asChannelLayout as)
+                  let chLayout = asChannelLayout as
+                  putStrLn $ "channel layout order: " ++ show (order chLayout)
+                  putStrLn $ "channel layout channels: " ++ show (numChannels chLayout)
                   putStrLn $ "channel count : " ++ show (asChannelCount as)
                   let inParams = AudioParams
                                   { apChannelLayout = asChannelLayout as

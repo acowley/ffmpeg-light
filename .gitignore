@@ -7,3 +7,6 @@ dist
 /.cabbages
 /TAGS
 .stack-work
+dist-newstyle
+cabal.project.local
+

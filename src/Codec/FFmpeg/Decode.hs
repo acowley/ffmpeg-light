@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE RecordWildCards          #-}
+{-# LANGUAGE TupleSections            #-}
 -- | Video decoding API. Includes FFI declarations for the underlying
 -- FFmpeg functions, wrappers for these functions that wrap error
 -- condition checking, and high level Haskellized interfaces.
@@ -11,15 +12,15 @@ import           Codec.FFmpeg.Common
 import           Codec.FFmpeg.Enums
 import           Codec.FFmpeg.Scaler
 import           Codec.FFmpeg.Types
-import           Control.Arrow             (first)
-import           Control.Monad             (void, when)
+import           Codec.FFmpeg.Display
 import           Control.Monad.Except
+import           Control.Monad (when, void)
 import           Control.Monad.IO.Class    (MonadIO(liftIO))
 import           Control.Monad.Trans.Maybe
 import           Foreign.C.String
 import           Foreign.C.Types
 import           Foreign.Marshal.Alloc     (alloca, free, mallocBytes)
-import           Foreign.Marshal.Array     (advancePtr)
+import           Foreign.Marshal.Array     (advancePtr, peekArray)
 import           Foreign.Marshal.Utils     (with)
 import           Foreign.Ptr
 import           Foreign.Storable
@@ -43,8 +44,8 @@ foreign import ccall "avcodec_find_decoder"
 foreign import ccall "avcodec_find_decoder_by_name"
   avcodec_find_decoder_by_name :: CString -> IO AVCodec
 
-foreign import ccall "avpicture_get_size"
-  avpicture_get_size :: AVPixelFormat -> CInt -> CInt -> IO CInt
+foreign import ccall "av_image_get_buffer_size"
+  av_image_get_buffer_size :: AVPixelFormat -> CInt -> CInt -> CInt -> IO CInt
 
 foreign import ccall "av_malloc"
   av_malloc :: CSize -> IO (Ptr ())
@@ -52,13 +53,9 @@ foreign import ccall "av_malloc"
 foreign import ccall "av_read_frame"
   av_read_frame :: AVFormatContext -> AVPacket -> IO CInt
 
-foreign import ccall "avcodec_decode_audio4"
-  decode_audio :: AVCodecContext -> AVFrame -> Ptr CInt -> AVPacket
-               -> IO CInt
-
-foreign import ccall "avcodec_decode_video2"
-  decode_video :: AVCodecContext -> AVFrame -> Ptr CInt -> AVPacket
-               -> IO CInt
+foreign import ccall "avcodec_send_frame"
+  decode_video :: AVCodecContext -> AVFrame -> IO CInt
+  
 foreign import ccall "avformat_close_input"
   close_input :: Ptr AVFormatContext -> IO ()
 
@@ -67,9 +64,6 @@ foreign import ccall "av_dict_set"
 
 foreign import ccall "av_find_input_format"
   av_find_input_format :: CString -> IO (Ptr AVInputFormat)
-
-foreign import ccall "av_format_set_video_codec"
-  av_format_set_video_codec :: AVFormatContext -> AVCodec -> IO ()
 
 dictSet :: Ptr AVDictionary -> String -> String -> IO ()
 dictSet d k v = do
@@ -113,11 +107,11 @@ openCamera cam cfg =
     setupCamera :: AVFormatContext -> String -> IO ()
     setupCamera avfc c =
       do setCamera avfc
-         setFilename avfc c
+         setUrl avfc c
          when (format cfg == Just "mjpeg") $ do
            mjpeg <- avcodec_find_decoder avCodecIdMjpeg
            setVideoCodecID avfc avCodecIdMjpeg
-           av_format_set_video_codec avfc mjpeg
+           setVideoCodec avfc mjpeg
 
 openInput :: (MonadIO m, MonadError String m) => InputSource -> m AVFormatContext
 openInput ipt =
@@ -135,11 +129,6 @@ openFile filename =
          when (r /= 0) (stringError r >>= \s ->
                           fail $ "ffmpeg failed opening file: " ++ s)
          peek ctx
-
--- | @AVFrame@ is a superset of @AVPicture@, so we can upcast an
--- 'AVFrame' to an 'AVPicture'.
-frameAsPicture :: AVFrame -> AVPicture
-frameAsPicture = AVPicture . getPtr
 
 -- | Find a codec given by name.
 findDecoder :: (MonadIO m, MonadError String m) => String -> m AVCodec
@@ -170,7 +159,7 @@ findVideoStream fmt = do
       cod <- peek codec
       streams <- getStreams fmt
       vidStream <- peek (advancePtr streams (fromIntegral i))
-      ctx <- getCodecContext vidStream
+      ctx <- createCodecContext cod vidStream
       return (i, ctx, cod, vidStream)
 
 findAudioStream :: (MonadIO m, MonadError String m)
@@ -184,9 +173,17 @@ findAudioStream fmt = do
       cod <- peek codec
       streams <- getStreams fmt
       audioStream <- peek (advancePtr streams (fromIntegral i))
-      ctx <- getCodecContext audioStream
+      ctx <- createCodecContext cod audioStream
       return (i, ctx, cod, audioStream)
 
+createCodecContext :: HasCodecParams t => AVCodec -> t -> IO AVCodecContext
+createCodecContext cod stream = do
+  pCodecCtx <- avcodec_alloc_context3 cod;
+  codecPar <- getCodecParams stream
+  res <- avcodec_parameters_to_context pCodecCtx codecPar
+  when (res < 0) (fail "Couldn't get codec parameters for video stream")
+  pure pCodecCtx
+      
 -- | Find a registered decoder with a codec ID matching that found in
 -- the given 'AVCodecContext'.
 getDecoder :: (MonadIO m, MonadError String m)
@@ -207,37 +204,52 @@ openCodec ctx cod =
     peek dict
 
 -- | Return the next frame of a stream.
-read_frame_check :: AVFormatContext -> AVPacket -> IO ()
-read_frame_check ctx pkt = do r <- av_read_frame ctx pkt
-                              when (r < 0) (fail "Frame read failed")
+readFrameCheck :: AVFormatContext -> AVPacket -> IO ()
+readFrameCheck ctx pkt = do 
+  r <- av_read_frame ctx pkt
+  when (r < 0) (fail "Frame read failed")
+
+data VideoStreamMetadata = VideoStreamMetadata
+  { metadata :: Maybe AVDictionary
+  , displayRotation :: Maybe DisplayRotationDegrees
+  }
+
+extractVideoStreamMetadata :: MonadIO m => AVStream -> m VideoStreamMetadata
+extractVideoStreamMetadata vidStream = do
+  sd <- getStreamSideData vidStream
+  VideoStreamMetadata <$> structMetadata vidStream <*> extractDisplayRotation sd
 
 -- | Read frames of the given 'AVPixelFormat' from a video stream.
+-- | Also read side data or metadata of stream and return this if present
 frameReader :: (MonadIO m, MonadError String m)
-            => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO ())
-frameReader dstFmt ipt =
-  do inputContext <- openInput ipt
-     checkStreams inputContext
-     (vidStreamIndex, ctx, cod, _vidStream) <- findVideoStream inputContext
-     _ <- openCodec ctx cod
-     prepareReader inputContext vidStreamIndex dstFmt ctx
+            => AVPixelFormat -> InputSource -> m (IO (Maybe AVFrame), IO (), VideoStreamMetadata )
+frameReader dstFmt ipt = do 
+  inputContext <- openInput ipt
+  checkStreams inputContext
+  (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
+  _ <- openCodec ctx cod
+  metaAndSide <- extractVideoStreamMetadata vidStream
+  (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
+  pure (reader, cleanup, metaAndSide)
 
 -- | Read RGB frames with the result in the 'MaybeT' transformer.
 --
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderT :: (Functor m, MonadIO m, MonadError String m)
-             => InputSource -> m (MaybeT IO AVFrame, IO ())
-frameReaderT = fmap (first MaybeT) . frameReader avPixFmtRgb24
-
+             => InputSource -> m (MaybeT IO AVFrame, IO (), VideoStreamMetadata)
+frameReaderT = fmap (first3 MaybeT) . frameReader avPixFmtRgb24
+  
 -- | Read time stamped frames of the given 'AVPixelFormat' from a
 -- video stream. Time is given in seconds from the start of the
 -- stream.
 frameReaderTime :: (MonadIO m, MonadError String m)
                 => AVPixelFormat -> InputSource
-                -> m (IO (Maybe (AVFrame, Double)), IO ())
+                -> m (IO (Maybe (AVFrame, Double)), IO (), VideoStreamMetadata)
 frameReaderTime dstFmt src =
   do inputContext <- openInput src
      checkStreams inputContext
      (vidStreamIndex, ctx, cod, vidStream) <- findVideoStream inputContext
+     metaAndSide <- extractVideoStreamMetadata vidStream
      _ <- openCodec ctx cod
      (reader, cleanup) <- prepareReader inputContext vidStreamIndex dstFmt ctx
      AVRational num den <- liftIO $ getTimeBase vidStream
@@ -250,21 +262,22 @@ frameReaderTime dstFmt src =
                        Nothing -> return Nothing
                        Just f -> do t <- frameTime' f
                                     return $ Just (f, t)
-     return (readTS, cleanup)
+     return (readTS, cleanup, metaAndSide)
 
 frameAudioReader :: (MonadIO m, MonadError String m)
-                 => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO ())
+                 => InputSource -> m (AudioStream, IO (Maybe AVFrame), IO (), Maybe AVDictionary)
 frameAudioReader fileName = do
   inputContext <- openInput fileName
   checkStreams inputContext
   (audioStreamIndex, ctx, cod, audioStream) <- findAudioStream inputContext
-  openCodec ctx cod
+  metadata <- structMetadata audioStream
+  void (openCodec ctx cod)
   as <- liftIO $ do
     bitrate <- getBitRate ctx
     samplerate <- getSampleRate ctx
     channelLayout <- getChannelLayout ctx
     sampleFormat <- getSampleFormat ctx
-    channels <- getChannels ctx
+    let channels = numChannels channelLayout
     codecId <- getCodecID cod
     return $ AudioStream
         { asBitRate = bitrate
@@ -275,15 +288,15 @@ frameAudioReader fileName = do
         , asCodec = codecId
         }
   (readFrame, finalize) <- prepareAudioReader inputContext audioStreamIndex ctx
-  return (as, readFrame, finalize)
+  return (as, readFrame, finalize, metadata)
 
 -- | Read time stamped RGB frames with the result in the 'MaybeT'
 -- transformer.
 --
 -- > frameReaderT = fmap (first MaybeT) . frameReader
 frameReaderTimeT :: (Functor m, MonadIO m, MonadError String m)
-                 => InputSource -> m (MaybeT IO (AVFrame, Double), IO ())
-frameReaderTimeT = fmap (first MaybeT) . frameReaderTime avPixFmtRgb24
+                 => InputSource -> m (MaybeT IO (AVFrame, Double), IO (), VideoStreamMetadata)
+frameReaderTimeT = fmap (first3 MaybeT) . frameReaderTime avPixFmtRgb24
 
 prepareAudioReader :: (MonadIO m, MonadError String m)
                    => AVFormatContext -> CInt -> AVCodecContext
@@ -341,16 +354,17 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
                       _ <- codec_close codCtx
                       with fmtCtx close_input
                       free (getPtr pkt)
+         -- This function follows the steps from https://ffmpeg.org/doxygen/trunk/group__lavc__encdec.html
          getFrame = do
-           read_frame_check fmtCtx pkt
-           whichStream <- getStreamIndex pkt
-           if whichStream == vidStream
-           then do
-             fin <- alloca $ \finished -> do
-                      _ <- decode_video codCtx fRaw finished pkt
-                      peek finished
-             if fin > 0
-             then do
+            recvdFrame  <- avcodec_receive_frame codCtx fRaw
+            if recvdFrame == c_AVERROR_EAGAIN then do
+              readFrameCheck fmtCtx pkt
+              whichStream <- getStreamIndex pkt
+              if whichStream == vidStream then do
+                avcodec_send_packet codCtx pkt -- TODO: non zero is an error here
+                free_packet pkt
+                getFrame
+             
                -- Some streaming codecs require a final flush with
                -- an empty packet
                -- fin' <- alloca $ \fin2 -> do
@@ -359,14 +373,36 @@ prepareReader fmtCtx vidStream dstFmt codCtx =
                --           (#poke AVPacket, size) pkt (0::CInt)
                --           decode_video codCtx fRaw fin2 pkt
                --           peek fin2
+              else free_packet pkt >> getFrame           
+            else do
+              _ <- swsScale sws fRaw fRgb
 
-               _ <- swsScale sws fRaw fRgb
+              -- Copy the raw frame's timestamp to the RGB frame
+              getPktDts fRaw >>= setPts fRgb
 
-               -- Copy the raw frame's timestamp to the RGB frame
-               getPktPts fRaw >>= setPts fRgb
-
-               free_packet pkt
-               return $ Just fRgb
-             else free_packet pkt >> getFrame
-           else free_packet pkt >> getFrame
+              free_packet pkt
+              return $ Just fRgb
+           
      return (getFrame `catchError` const (return Nothing), cleanup)
+
+getStreamSideData :: MonadIO m => AVStream -> m [AVPacketSideData]
+getStreamSideData avstream = liftIO $ do
+  nbs <- fromIntegral <$> getNbSideData avstream
+  if nbs > 0 then do
+    sdArray <- getSideData avstream
+    peekArray nbs sdArray
+  else  pure []
+
+extractDisplayRotation :: MonadIO m => [AVPacketSideData] -> m (Maybe DisplayRotationDegrees)
+extractDisplayRotation = go Nothing
+  where 
+    go dsp@(Just _) _ = pure dsp
+    go Nothing (nextElem:xs) = do 
+      disprm <- liftIO (getDisplayRotation nextElem)
+      case disprm of 
+        Nothing -> go Nothing xs
+        Just dispr -> pure (Just dispr)
+    go anything [] = pure anything
+    
+
+

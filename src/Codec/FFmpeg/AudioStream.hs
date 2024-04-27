@@ -2,14 +2,14 @@ module Codec.FFmpeg.AudioStream where
 
 import           Codec.FFmpeg.Enums
 import           Data.Bits
-import qualified Data.Vector.Storable as V
 import           Foreign.C.Types
+import Codec.FFmpeg.Types (AVChannelLayout)
 
 data AudioStream = AudioStream
   { asBitRate       :: CInt
   , asSampleFormat  :: AVSampleFormat
   , asSampleRate    :: CInt
-  , asChannelLayout :: CULong
+  , asChannelLayout :: AVChannelLayout
   , asChannelCount  :: CInt
   , asCodec         :: AVCodecID
   }
